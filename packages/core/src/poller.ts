@@ -4,12 +4,13 @@ import {
   type QueueSnapshot,
   type ResponseMeta,
 } from './monitor.js';
-import { ReadBudget } from './read-budget.js';
+import { ReadBudget, ReadBudgetExceededError } from './read-budget.js';
 
 export interface PollingOptions {
   intervalMs?: number;
   maxConcurrentReads?: number;
   queryTimeoutMs?: number;
+  maxReadsPerQueue?: number;
 }
 
 export interface ObservedSnapshot {
@@ -22,11 +23,25 @@ interface CachedSnapshot {
   observedAt: number;
 }
 
+export interface TrendPoint {
+  observedAt: string;
+  gapBeforeMs?: number;
+  waiting: number;
+  delayed: number;
+  active: number;
+  completed: number;
+  failed: number;
+  source: 'sampled';
+}
+
 export class SnapshotPoller {
   readonly intervalMs: number;
   readonly queryTimeoutMs: number;
   readonly budget: ReadBudget;
+  readonly maxReadsPerQueue: number;
+  private readonly queueReads = new Map<string, number>();
   private readonly cache = new Map<string, CachedSnapshot>();
+  private readonly trends = new Map<string, TrendPoint[]>();
   private readonly inFlight = new Map<string, Promise<CachedSnapshot>>();
   private readonly failureCount = new Map<string, number>();
   private readonly retryAfter = new Map<string, number>();
@@ -40,6 +55,13 @@ export class SnapshotPoller {
     this.intervalMs = options.intervalMs ?? 5_000;
     this.queryTimeoutMs = options.queryTimeoutMs ?? 2_000;
     this.budget = new ReadBudget(options.maxConcurrentReads ?? 4, this.queryTimeoutMs);
+    this.maxReadsPerQueue = options.maxReadsPerQueue ?? 2;
+    if (
+      !Number.isInteger(this.maxReadsPerQueue) ||
+      this.maxReadsPerQueue < 1 ||
+      this.maxReadsPerQueue > 8
+    )
+      throw new Error('maxReadsPerQueue must be between 1 and 8');
     if (!Number.isInteger(this.intervalMs) || this.intervalMs < 1_000 || this.intervalMs > 60_000)
       throw new Error('Invalid polling interval');
   }
@@ -104,6 +126,33 @@ export class SnapshotPoller {
     };
   }
 
+  getTrend(name: string): TrendPoint[] {
+    return [...(this.trends.get(name) ?? [])];
+  }
+
+  runQueueRead<T>(name: string, operation: () => Promise<T>): Promise<T> {
+    const active = this.queueReads.get(name) ?? 0;
+    if (active >= this.maxReadsPerQueue) throw new ReadBudgetExceededError();
+    this.queueReads.set(name, active + 1);
+    const release = () => {
+      const remaining = (this.queueReads.get(name) ?? 1) - 1;
+      if (remaining) this.queueReads.set(name, remaining);
+      else this.queueReads.delete(name);
+    };
+    try {
+      return this.budget.run(async () => {
+        try {
+          return await operation();
+        } finally {
+          release();
+        }
+      });
+    } catch (cause) {
+      release();
+      throw cause;
+    }
+  }
+
   private observed(cached: CachedSnapshot, stale: boolean): ObservedSnapshot {
     const meta = responseMeta(new Date(cached.observedAt));
     meta.freshnessMs = Math.max(0, Date.now() - cached.observedAt);
@@ -117,10 +166,24 @@ export class SnapshotPoller {
     if (existing) return existing;
     const operation = (async () => {
       try {
-        const data = await this.budget.run(() => this.registry.snapshot(name));
+        const data = await this.runQueueRead(name, () => this.registry.snapshot(name));
         if (!data) throw new Error('Queue not found');
         const cached = { data, observedAt: Date.now() };
         this.cache.set(name, cached);
+        const points = this.trends.get(name) ?? [];
+        const previous = points.at(-1);
+        const gapBeforeMs = previous ? cached.observedAt - Date.parse(previous.observedAt) : 0;
+        points.push({
+          observedAt: new Date(cached.observedAt).toISOString(),
+          gapBeforeMs: gapBeforeMs > this.intervalMs * 1.5 ? gapBeforeMs : undefined,
+          waiting: data.counts.waiting,
+          delayed: data.counts.delayed,
+          active: data.counts.active,
+          completed: data.counts.completed,
+          failed: data.counts.failed,
+          source: 'sampled',
+        });
+        this.trends.set(name, points.slice(-60));
         this.failureCount.delete(name);
         this.retryAfter.delete(name);
         return cached;

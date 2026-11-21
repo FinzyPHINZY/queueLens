@@ -22,7 +22,7 @@ async function commandCount() {
   return [...info.matchAll(/calls=(\d+)/g)].reduce((total, match) => total + Number(match[1]), 0);
 }
 
-async function run(label, monitored) {
+async function run(label, monitored, diagnostics = false) {
   const monitor = monitored
     ? createMonitor({ queues: [queue], token, polling: { intervalMs: 1_000 } })
     : null;
@@ -37,6 +37,7 @@ async function run(label, monitored) {
   const cpuBefore = process.cpuUsage();
   const start = performance.now();
   const latencies = [];
+  const diagnosticLatencies = [];
   let completed = 0;
   const done = new Promise((resolve) => {
     const onCompleted = () => {
@@ -59,21 +60,37 @@ async function run(label, monitored) {
           .catch(() => undefined);
       }, 100)
     : null;
+  const diagnosticPolling =
+    endpoint && diagnostics
+      ? setInterval(() => {
+          const started = performance.now();
+          void globalThis
+            .fetch(`${endpoint}/${name}/diagnostics`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            .then((response) => {
+              if (response.ok) diagnosticLatencies.push(performance.now() - started);
+            })
+            .catch(() => undefined);
+        }, 500)
+      : null;
   await queue.addBulk(
     Array.from({ length: 200 }, (_, index) => ({
       name: 'benchmark',
       data: { index },
-      opts: { removeOnComplete: true },
+      opts: { removeOnComplete: !diagnostics },
     })),
   );
   await done;
   if (polling) clearInterval(polling);
+  if (diagnosticPolling) clearInterval(diagnosticPolling);
   const elapsedMs = performance.now() - start;
   const cpu = process.cpuUsage(cpuBefore);
   const commandDelta = (await commandCount()) - countBefore;
   if (server) await new Promise((resolve) => server.close(resolve));
   await monitor?.close();
   latencies.sort((a, b) => a - b);
+  diagnosticLatencies.sort((a, b) => a - b);
   return {
     label,
     jobs: completed,
@@ -85,6 +102,10 @@ async function run(label, monitored) {
     apiP95Ms: latencies.length
       ? Number(latencies[Math.ceil(latencies.length * 0.95) - 1].toFixed(1))
       : null,
+    diagnosticsP95Ms: diagnosticLatencies.length
+      ? Number(diagnosticLatencies[Math.ceil(diagnosticLatencies.length * 0.95) - 1].toFixed(1))
+      : null,
+    diagnosticsRequests: diagnosticLatencies.length,
   };
 }
 
@@ -93,6 +114,7 @@ try {
   await worker.waitUntilReady();
   globalThis.console.log(JSON.stringify(await run('baseline', false)));
   globalThis.console.log(JSON.stringify(await run('monitor', true)));
+  globalThis.console.log(JSON.stringify(await run('monitor+diagnostics', true, true)));
 } finally {
   await worker.close();
   await queue.obliterate({ force: true });

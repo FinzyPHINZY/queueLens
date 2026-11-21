@@ -12,6 +12,7 @@ const host = process.env.MONITOR_HOST ?? '127.0.0.1';
 const redisUrl = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
 const intervalMs = Number(process.env.MONITOR_POLL_INTERVAL_MS ?? 5_000);
 const maxConcurrentReads = Number(process.env.MONITOR_MAX_READS ?? 4);
+const maxReadsPerQueue = Number(process.env.MONITOR_MAX_READS_PER_QUEUE ?? 2);
 const queryTimeoutMs = Number(process.env.MONITOR_QUERY_TIMEOUT_MS ?? 2_000);
 const payloadAccess = process.env.MONITOR_PAYLOAD_ACCESS ?? 'deny';
 const showFailureDetails = process.env.MONITOR_SHOW_FAILURE_DETAILS === 'true';
@@ -46,7 +47,7 @@ const monitor = createStandaloneMonitor({
   queueNames: names,
   token,
   dashboardDir: resolve('apps/dashboard/dist'),
-  polling: { intervalMs, maxConcurrentReads, queryTimeoutMs },
+  polling: { intervalMs, maxConcurrentReads, maxReadsPerQueue, queryTimeoutMs },
   redaction: { payloadAccess, allowedPaths, redactPaths, showFailureDetails },
   log,
 });

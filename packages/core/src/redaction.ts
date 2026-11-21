@@ -17,6 +17,7 @@ export interface SafeJobDetail extends JobMetadata {
   returnValue: DisclosedValue;
   failureReason: string;
   stacktrace: string[];
+  timeline: { state: string; at: number; source: 'reconstructed' }[];
 }
 
 const OMIT = Symbol('omit');
@@ -143,6 +144,18 @@ export function safeJobSummary(job: RawJob): JobMetadata {
     priority: job.priority,
     progress: typeof job.progress === 'number' ? job.progress : '[HIDDEN]',
     repeatJobKey: job.repeatJobKey,
+    stalledSignals: job.stalledSignals,
+    parentJobId: job.parentJobId,
+    queueWaitMs:
+      job.processedOn !== undefined && job.processedOn >= job.timestamp
+        ? job.processedOn - job.timestamp
+        : undefined,
+    processingMs:
+      job.finishedOn !== undefined &&
+      job.processedOn !== undefined &&
+      job.finishedOn >= job.processedOn
+        ? job.finishedOn - job.processedOn
+        : undefined,
   };
 }
 
@@ -159,5 +172,14 @@ export function safeJobDetail(job: RawJob, policy: DisclosurePolicy = {}): SafeJ
     stacktrace: policy.showFailureDetails
       ? job.stacktrace.slice(0, 10).map(sanitizeFailureText)
       : [],
+    timeline: [
+      { state: 'created', at: job.timestamp, source: 'reconstructed' as const },
+      ...(job.processedOn
+        ? [{ state: 'started', at: job.processedOn, source: 'reconstructed' as const }]
+        : []),
+      ...(job.finishedOn
+        ? [{ state: job.state, at: job.finishedOn, source: 'reconstructed' as const }]
+        : []),
+    ],
   };
 }

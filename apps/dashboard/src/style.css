@@ -32,6 +32,105 @@ button:disabled {
 .app {
   min-height: 100vh;
 }
+.theme-toggle {
+  border: 1px solid #344658;
+  color: inherit;
+  background: transparent;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.app.light {
+  background: #f5f8fb;
+  color: #172b3b;
+}
+.app.light .topbar,
+.app.light .sidebar {
+  background: #fff;
+  border-color: #d6e0e8;
+}
+.app.light .login {
+  background: #edf6f2;
+}
+.app.light .login-card,
+.app.light .panel,
+.app.light .card,
+.app.light .drawer {
+  background: #fff;
+  border-color: #d6e0e8;
+  color: #172b3b;
+}
+.app.light .queue {
+  color: #334a5c;
+}
+.app.light .queue.active {
+  background: #d9f4e9;
+  color: #143a2b;
+}
+.app.light .queue-fail {
+  background: #fde9e9;
+  color: #8f2636;
+}
+.app.light .page-heading p,
+.app.light .panel-head p,
+.app.light .login p,
+.app.light .meta,
+.app.light .diagnostic-note,
+.app.light .diagnostic-grid small,
+.app.light .hidden,
+.app.light .drawer dt {
+  color: #526779;
+}
+.app.light .refresh,
+.app.light .pagination button,
+.app.light .drawer-head button {
+  background: #eef3f7;
+  color: #173044;
+  border-color: #c5d3de;
+}
+.app.light input,
+.app.light select,
+.app.light pre {
+  background: #f7fafc;
+  color: #172b3b;
+  border-color: #c5d3de;
+}
+.app.light .login label,
+.app.light .filters label,
+.app.light th,
+.app.light td {
+  color: #263e50;
+  border-color: #dce5ec;
+}
+.app.light .link {
+  color: #08744e;
+}
+.app.light .badge {
+  background: #d9f4e9;
+  color: #176343;
+}
+.app.light .status {
+  background: #e6eff5;
+  color: #284b63;
+}
+.app.light .status.failed,
+.app.light .status.stale {
+  background: #fde9e9;
+  color: #8f2636;
+}
+.app.light .status.completed,
+.app.light .status.online {
+  background: #d9f4e9;
+  color: #176343;
+}
+.app.light .alert {
+  background: #fff4dd;
+  color: #654100;
+  border-color: #d9ad54;
+}
+.app.light .drawer-backdrop {
+  background: #10202aa0;
+}
 .topbar {
   height: 72px;
   border-bottom: 1px solid #243142;
@@ -180,6 +279,11 @@ button:disabled {
   letter-spacing: 0.14em;
   padding: 0 14px 16px;
 }
+.view-nav {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #243142;
+}
 .sidebar-label span {
   float: right;
   color: #b5c1d0;
@@ -300,6 +404,73 @@ button:disabled {
 .card.active .card-value {
   color: #77e3b5;
 }
+.diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px 24px;
+}
+.diagnostic-grid > div {
+  padding: 12px;
+  border: 1px solid #2a394a;
+  border-radius: 8px;
+}
+.diagnostic-grid strong,
+.diagnostic-grid small {
+  display: block;
+}
+.diagnostic-grid strong {
+  font-size: 20px;
+}
+.diagnostic-grid small {
+  color: #94a2b4;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.trend {
+  height: 64px;
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  padding: 0 24px;
+}
+.trend span {
+  flex: 1;
+  min-width: 3px;
+  max-width: 16px;
+  background: #77e3b5;
+  border-radius: 3px 3px 0 0;
+}
+.trend span.gap {
+  border-left: 3px solid #ff9ba7;
+}
+.trend .hidden {
+  flex: none;
+  max-width: none;
+  height: auto;
+  background: none;
+}
+.outcome-trend {
+  padding: 12px 24px;
+}
+.outcome-trend > strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.outcome-trend table {
+  min-width: 420px;
+}
+.outcome-trend th,
+.outcome-trend td {
+  padding: 8px 12px;
+}
+.diagnostic-note {
+  padding: 0 24px 12px;
+  color: #94a2b4;
+  font-size: 11px;
+  line-height: 1.5;
+}
 .panel {
   border: 1px solid #2a394a;
   background: #141e2a;
@@ -388,12 +559,25 @@ td small {
   background: #243e55;
   color: #9cccf4;
 }
+.status.online {
+  background: #1e3a33;
+  color: #83dfb5;
+}
+.status.stale {
+  background: #492832;
+  color: #ffa1ab;
+}
 .link {
   color: #80e7bb;
   background: none;
   border: 0;
   padding: 4px 0;
   white-space: nowrap;
+}
+.flow-link {
+  display: block;
+  margin: 8px 0;
+  text-align: left;
 }
 .empty {
   text-align: center;
@@ -487,6 +671,9 @@ a:focus-visible {
   outline-offset: 2px;
 }
 @media (max-width: 900px) {
+  .diagnostic-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -495,6 +682,15 @@ a:focus-visible {
   }
 }
 @media (max-width: 650px) {
+  .diagnostic-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .view-nav {
+    display: flex;
+    gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+  }
   .top-disconnect {
     display: block;
   }

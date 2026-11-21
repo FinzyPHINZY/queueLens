@@ -7,9 +7,15 @@ import { SnapshotPoller } from '../../core/src/poller.js';
 import { ReadBudget } from '../../core/src/read-budget.js';
 import { validateDisclosurePolicy } from '../../core/src/redaction.js';
 import { createHttpHandler, type HttpConfig } from '../../server/src/http.js';
+export { instrumentWorker, type WorkerTelemetryOptions } from './worker-telemetry.js';
 
 export type { AuthTarget, Authorize, HttpConfig } from '../../server/src/http.js';
-export type { ApiResponse, MonitorErrorCode, ResponseMeta } from '../../core/src/monitor.js';
+export type {
+  ApiResponse,
+  MonitorErrorCode,
+  ResponseMeta,
+  WorkerObservation,
+} from '../../core/src/monitor.js';
 export type { DisclosurePolicy } from '../../core/src/redaction.js';
 export type { PollingOptions } from '../../core/src/poller.js';
 
@@ -59,6 +65,10 @@ export function createStandaloneMonitor(options: StandaloneOptions) {
     throw new Error('A monitor authorization strategy is required');
   validateDisclosurePolicy(options.redaction);
   new ReadBudget(options.polling?.maxConcurrentReads, options.polling?.queryTimeoutMs);
+  const perQueue = options.polling?.maxReadsPerQueue ?? 2;
+  if (!Number.isInteger(perQueue) || perQueue < 1 || perQueue > 8) {
+    throw new Error('MONITOR_MAX_READS_PER_QUEUE must be between 1 and 8');
+  }
   const interval = options.polling?.intervalMs ?? 5_000;
   if (!Number.isInteger(interval) || interval < 1_000 || interval > 60_000) {
     throw new Error('MONITOR_POLL_INTERVAL_MS must be between 1000 and 60000');

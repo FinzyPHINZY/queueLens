@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Stage 2 diagnostics
+
+- Add optional payload-free worker heartbeats with TTL-based online and stale labels.
+- Add authorized SSE queue updates, queue comparison, sampled diagnostics, and in-memory backlog trend.
+- Add reconstructed job timeline, bounded flow and scheduler metadata, duration fields, retry and error filters, and light theme.
+
 ## Unreleased — Stage 1 preview
 
 - Add a read-only dashboard and job inspector.

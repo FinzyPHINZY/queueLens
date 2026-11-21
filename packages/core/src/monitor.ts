@@ -23,6 +23,10 @@ export interface JobMetadata {
   priority?: number;
   progress?: unknown;
   repeatJobKey?: string;
+  stalledSignals?: number;
+  parentJobId?: string;
+  queueWaitMs?: number;
+  processingMs?: number;
 }
 
 export interface RawJob extends JobMetadata {
@@ -38,6 +42,41 @@ export interface JobPageQuery {
   limit: number;
 }
 
+export interface WorkerObservation {
+  id: string;
+  queue: string;
+  hostname: string;
+  concurrency: number;
+  version?: string;
+  lastHeartbeat: number;
+  heartbeatTtlMs: number;
+  state: 'online' | 'stale';
+  activeJobIds: string[];
+  completed: number;
+  failed: number;
+  throughput: { completed: number; failed: number; windowMs: number; source: 'event-derived' };
+  stalledSignals: number;
+  source: 'instrumented';
+}
+
+export interface RawFlow {
+  parent?: { id: string; queueKey: string };
+  childKeys: string[];
+  partial: boolean;
+}
+
+export interface SchedulerMetadata {
+  key: string;
+  name: string;
+  next?: number;
+  every?: number;
+  pattern?: string;
+  iterationCount?: number;
+  limit?: number;
+  endDate?: number;
+  timeZone?: string;
+}
+
 export interface ReadOnlyQueue {
   readonly name: string;
   getCounts(): Promise<QueueCounts>;
@@ -45,6 +84,10 @@ export interface ReadOnlyQueue {
   listJobs(query: JobPageQuery): Promise<RawJob[]>;
   getJob(id: string): Promise<RawJob | null>;
   getJobMetadata(id: string): Promise<JobMetadata | null>;
+  listWorkers?(): Promise<WorkerObservation[]>;
+  getOldestWaitingAt?(): Promise<number | null>;
+  getFlow?(id: string): Promise<RawFlow | null>;
+  listSchedulers?(): Promise<SchedulerMetadata[]>;
   close?(): Promise<void>;
 }
 
@@ -52,6 +95,7 @@ export interface QueueSnapshot {
   name: string;
   counts: QueueCounts;
   paused?: boolean;
+  oldestWaitingAt?: number | null;
 }
 
 export interface ResponseMeta {
@@ -115,8 +159,12 @@ export class QueueRegistry {
   async snapshot(name: string): Promise<QueueSnapshot | null> {
     const queue = this.get(name);
     if (!queue) return null;
-    const [counts, paused] = await Promise.all([queue.getCounts(), queue.isPaused()]);
-    return { name, counts, paused };
+    const [counts, paused, oldestWaitingAt] = await Promise.all([
+      queue.getCounts(),
+      queue.isPaused(),
+      queue.getOldestWaitingAt?.(),
+    ]);
+    return { name, counts, paused, oldestWaitingAt };
   }
 
   async close(): Promise<void> {
