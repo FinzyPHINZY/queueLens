@@ -78,6 +78,7 @@ test('browser shows queues and sanitized job detail; token stays in request head
   await page.getByRole('button', { name: 'Inspect' }).click();
   await page.getByRole('heading', { name: 'Payload' }).waitFor();
   await page.getByText('Hidden (policy) by monitor policy.').first().waitFor();
+  await page.screenshot({ path: 'test-results/dashboard-desktop.png', fullPage: true });
   await page.keyboard.press('Escape');
   await page.getByRole('heading', { name: 'Payload' }).waitFor({ state: 'detached' });
   assert.ok(requested.length >= 3);
@@ -120,6 +121,7 @@ test('dashboard fits a mobile viewport', async ({ page }) => {
   await page.getByLabel('Access token').fill('browser-token');
   await page.getByRole('button', { name: 'Open monitor' }).click();
   await page.getByRole('heading', { name: 'Jobs' }).waitFor();
+  await page.screenshot({ path: 'test-results/dashboard-mobile.png', fullPage: true });
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth,
   );
