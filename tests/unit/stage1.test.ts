@@ -184,3 +184,23 @@ test('invalid configuration fails before opening owned Redis queues', () => {
     /maxValueBytes/,
   );
 });
+
+test('operational logs omit Redis errors and request identifiers', async () => {
+  const entries: unknown[] = [];
+  const broken = {
+    ...queue,
+    async getJob() {
+      throw new Error('redis://user:secret@host password=secret');
+    },
+  };
+  const handler = createHttpHandler({
+    registry: new QueueRegistry([broken]),
+    token: 'secret',
+    log: (entry) => entries.push(entry),
+  });
+  const response = await call(handler, '/api/v1/queues/demo/jobs/private-id');
+  assert.equal(response.status, 503);
+  const output = JSON.stringify(entries);
+  assert.match(output, /read_failed/);
+  assert.doesNotMatch(output, /secret@host|password=secret|private-id/);
+});

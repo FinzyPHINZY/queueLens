@@ -38,6 +38,11 @@ export interface HttpConfig {
   poller?: SnapshotPoller;
   redaction?: DisclosurePolicy;
   dashboardDir?: string;
+  log?: (entry: {
+    level: 'debug' | 'error';
+    event: 'api_read' | 'read_failed';
+    code?: MonitorErrorCode;
+  }) => void;
 }
 
 function tokenMatches(header: string | undefined, token: string): boolean {
@@ -156,6 +161,7 @@ export function createHttpHandler(config: HttpConfig) {
       return error(res, 400, 'INVALID_REQUEST', 'Invalid URL');
     }
     const path = url.pathname;
+    config.log?.({ level: 'debug', event: 'api_read' });
     if (req.method !== 'GET')
       return error(res, 405, 'INVALID_REQUEST', 'Read-only mode permits GET only');
     const originalUrl = (req as IncomingMessage & { originalUrl?: string }).originalUrl;
@@ -311,6 +317,7 @@ export function createHttpHandler(config: HttpConfig) {
       }
     } catch (cause) {
       const failure = failureStatus(cause);
+      config.log?.({ level: 'error', event: 'read_failed', code: failure.code });
       return error(res, failure.status, failure.code, failure.message);
     }
   };

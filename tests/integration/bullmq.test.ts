@@ -24,7 +24,9 @@ test('reads real BullMQ jobs without mutating or closing a caller-owned queue', 
     new BullMqQueueAdapter(queue),
     new BullMqQueueAdapter(second),
   ]);
-  const server = createServer(createHttpHandler({ registry, token: 'test-token' }));
+  const server = createServer(
+    createHttpHandler({ registry, token: 'test-token', redaction: { showFailureDetails: true } }),
+  );
 
   try {
     await queue.waitUntilReady();
@@ -74,6 +76,7 @@ test('reads real BullMQ jobs without mutating or closing a caller-owned queue', 
     const raw = await detail.text();
     assert.doesNotMatch(raw, /must-not-appear/);
     assert.equal(JSON.parse(raw).data.state, 'failed');
+    assert.equal(JSON.parse(raw).data.failureReason, 'synthetic failure');
 
     const after = await queue.getJobCounts('completed', 'failed', 'delayed');
     assert.deepEqual(after, before);

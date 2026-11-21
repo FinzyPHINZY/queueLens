@@ -21,6 +21,8 @@ Standalone configuration: `REDIS_URL` (default `redis://127.0.0.1:6379`), `MONIT
 
 Disclosure settings are `MONITOR_PAYLOAD_ACCESS=deny|allow` (default deny), comma-separated `MONITOR_ALLOWED_PATHS` and `MONITOR_REDACT_PATHS` JSON Pointers, and `MONITOR_SHOW_FAILURE_DETAILS=true` (default false). The Compose demo explicitly enables sanitized failure details for its synthetic jobs.
 
+`MONITOR_LOG_LEVEL` accepts `silent`, `error`, `info` (default), or `debug`. Logs contain structured event names and error codes, without request URLs, tokens, payloads, or Redis exception text.
+
 ## Embed in an application
 
 `pnpm build` prepares a typed, locally installable tarball with `pnpm --dir packages/monitor pack`. Public npm publication is pending scope verification. The package exposes `createMonitor` and `createExpressMonitor` with the same handler. Existing BullMQ queue objects remain owned by the host application.

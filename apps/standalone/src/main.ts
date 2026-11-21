@@ -17,12 +17,28 @@ const payloadAccess = process.env.MONITOR_PAYLOAD_ACCESS ?? 'deny';
 const showFailureDetails = process.env.MONITOR_SHOW_FAILURE_DETAILS === 'true';
 const allowedPaths = (process.env.MONITOR_ALLOWED_PATHS ?? '').split(',').filter(Boolean);
 const redactPaths = (process.env.MONITOR_REDACT_PATHS ?? '').split(',').filter(Boolean);
+const logLevel = process.env.MONITOR_LOG_LEVEL ?? 'info';
+const levels = ['silent', 'error', 'info', 'debug'] as const;
 
 if (!token || names.length === 0 || !Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error('Set MONITOR_TOKEN, at least one MONITOR_QUEUES name, and a valid MONITOR_PORT');
 }
 if (payloadAccess !== 'deny' && payloadAccess !== 'allow') {
   throw new Error('MONITOR_PAYLOAD_ACCESS must be deny or allow');
+}
+if (!levels.includes(logLevel as (typeof levels)[number])) {
+  throw new Error('MONITOR_LOG_LEVEL must be silent, error, info, or debug');
+}
+function log(entry: {
+  level: 'debug' | 'error' | 'info';
+  event: string;
+  code?: string;
+  host?: string;
+  port?: number;
+  queues?: number;
+}) {
+  if (levels.indexOf(logLevel as (typeof levels)[number]) < levels.indexOf(entry.level)) return;
+  console.log(JSON.stringify({ time: new Date().toISOString(), ...entry }));
 }
 
 const monitor = createStandaloneMonitor({
@@ -32,16 +48,18 @@ const monitor = createStandaloneMonitor({
   dashboardDir: resolve('apps/dashboard/dist'),
   polling: { intervalMs, maxConcurrentReads, queryTimeoutMs },
   redaction: { payloadAccess, allowedPaths, redactPaths, showFailureDetails },
+  log,
 });
 const server = createServer(monitor.handler);
 
 server.listen(port, host, () => {
-  console.log(JSON.stringify({ event: 'monitor_started', host, port, queues: names.length }));
+  log({ level: 'info', event: 'monitor_started', host, port, queues: names.length });
 });
 
 async function shutdown() {
   server.close();
   await monitor.close();
+  log({ level: 'info', event: 'monitor_stopped' });
 }
 
 process.once('SIGINT', () => void shutdown());

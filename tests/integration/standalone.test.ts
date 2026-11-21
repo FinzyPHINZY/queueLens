@@ -4,6 +4,9 @@ import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { Queue } from 'bullmq';
 import { redisOptions } from '../../packages/bullmq-adapter/src/connection.js';
+import { BullMqQueueAdapter } from '../../packages/bullmq-adapter/src/adapter.js';
+import { QueueRegistry } from '../../packages/core/src/monitor.js';
+import { SnapshotPoller } from '../../packages/core/src/poller.js';
 import { createStandaloneMonitor } from '../../packages/monitor/src/index.js';
 
 test('standalone serves a real queue and dashboard with protected job data', async () => {
@@ -41,6 +44,34 @@ test('standalone serves a real queue and dashboard with protected job data', asy
   } finally {
     await new Promise<void>((closed) => server.close(() => closed()));
     await monitor.close();
+    await queue.obliterate({ force: true });
+    await queue.close();
+  }
+});
+
+test('real Redis disconnect returns stale data and reconnect restores fresh reads', async () => {
+  const name = `reconnect-test-${process.pid}-${Date.now()}`;
+  const queue = new Queue(name, {
+    connection: redisOptions(process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379'),
+  });
+  const poller = new SnapshotPoller(new QueueRegistry([new BullMqQueueAdapter(queue)]), {
+    intervalMs: 1_000,
+    queryTimeoutMs: 300,
+  });
+  const client = await queue.client;
+  try {
+    await queue.waitUntilReady();
+    assert.equal((await poller.get(name)).meta.partial, false);
+    client.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 1_010));
+    const stale = await poller.get(name);
+    assert.equal(stale.meta.partial, true);
+    await client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 1_010));
+    assert.equal((await poller.get(name)).meta.partial, false);
+  } finally {
+    poller.stop();
+    if (client.status === 'end') await client.connect();
     await queue.obliterate({ force: true });
     await queue.close();
   }
