@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { once } from 'node:events';
 import { test } from 'node:test';
 import { FlowProducer, Queue, Worker } from 'bullmq';
 import { BullMqQueueAdapter } from '../../packages/bullmq-adapter/src/adapter.js';
@@ -66,6 +68,68 @@ test('real BullMQ worker heartbeat and sampled diagnostics stay payload-free', a
     await telemetry.close();
     await worker.close();
     await flowProducer.close();
+    await queue.obliterate({ force: true });
+    await queue.close();
+  }
+});
+
+test('killed instrumented worker becomes stale and a replacement becomes online', async () => {
+  const name = `monitor-worker-liveness-${process.pid}-${Date.now()}`;
+  const connection = redisOptions(process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379');
+  const queue = new Queue(name, { connection });
+  const adapter = new BullMqQueueAdapter(queue);
+  let child: ChildProcess | undefined;
+  const launch = async () => {
+    const processWorker = spawn(
+      process.execPath,
+      ['--import', 'tsx', 'tests/fixtures/heartbeat-worker.ts', name],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    const ready = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('Instrumented worker did not become ready')),
+        10_000,
+      );
+      processWorker.stdout?.on('data', (chunk: Buffer) => {
+        if (chunk.toString().includes('READY')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      processWorker.once('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`Worker exited before ready: ${code}`));
+      });
+    });
+    await ready;
+    return processWorker;
+  };
+  try {
+    await queue.waitUntilReady();
+    child = await launch();
+    const [online] = await adapter.listWorkers();
+    assert.equal(online?.state, 'online');
+    child.kill('SIGKILL');
+    await once(child, 'exit');
+    child = undefined;
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, (online?.lastHeartbeat ?? 0) + 2_100 - Date.now())),
+    );
+    const [stale] = await adapter.listWorkers();
+    assert.equal(stale?.state, 'stale');
+    child = await launch();
+    const [restarted] = await adapter.listWorkers();
+    assert.equal(restarted?.state, 'online');
+    assert.ok((restarted?.lastHeartbeat ?? 0) > (stale?.lastHeartbeat ?? 0));
+  } finally {
+    if (child && child.exitCode === null) {
+      child.kill('SIGTERM');
+      await once(child, 'exit');
+    }
     await queue.obliterate({ force: true });
     await queue.close();
   }
