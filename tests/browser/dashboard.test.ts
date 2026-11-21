@@ -102,6 +102,9 @@ test('browser shows queues and sanitized job detail; token stays in request head
   await page.getByRole('button', { name: 'Inspect' }).click();
   await page.getByRole('heading', { name: 'Payload' }).waitFor();
   await page.getByText('Hidden (policy) by monitor policy.').first().waitFor();
+  await expect(page.getByRole('button', { name: 'Close inspector' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Close inspector' })).toBeFocused();
   await page.screenshot({ path: 'test-results/dashboard-desktop.png', fullPage: true });
   await page.keyboard.press('Escape');
   await page.getByRole('heading', { name: 'Payload' }).waitFor({ state: 'detached' });
