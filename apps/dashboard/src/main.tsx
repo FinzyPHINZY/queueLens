@@ -58,6 +58,17 @@ type Flow = {
   children: { queue: string; id: string }[];
   source: string;
 };
+type Scheduler = {
+  key: string;
+  name: string;
+  next?: number;
+  every?: number;
+  pattern?: string;
+  iterationCount?: number;
+  limit?: number;
+  endDate?: number;
+  timeZone?: string;
+};
 type Job = {
   id: string;
   name: string;
@@ -101,6 +112,7 @@ function App() {
   const [queues, setQueues] = useState<Queue[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics>();
+  const [schedulers, setSchedulers] = useState<Scheduler[]>([]);
   const [view, setView] = useState<'queues' | 'workers'>('queues');
   const [streaming, setStreaming] = useState(false);
   const lastLiveRefresh = useRef(0);
@@ -200,6 +212,21 @@ function App() {
       })
       .catch(() => {
         if (live) setDiagnostics(undefined);
+      });
+    return () => {
+      live = false;
+    };
+  }, [connected, selected, request, refreshKey]);
+
+  useEffect(() => {
+    if (!connected || !selected) return;
+    let live = true;
+    request<Scheduler[]>(`/queues/${encodeURIComponent(selected)}/schedulers`)
+      .then((body) => {
+        if (live) setSchedulers(body.data);
+      })
+      .catch(() => {
+        if (live) setSchedulers([]);
       });
     return () => {
       live = false;
@@ -797,6 +824,52 @@ function App() {
                         <p className="diagnostic-note">{diagnostics.limitations.join(' ')}</p>
                       </section>
                     )}
+                    <section className="panel" aria-label="Job schedulers">
+                      <div className="panel-head">
+                        <div>
+                          <h2>Job schedulers</h2>
+                          <p>
+                            Up to 50 schedules from BullMQ public metadata. Template payloads are
+                            never returned.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Name</th>
+                              <th>Schedule</th>
+                              <th>Next run</th>
+                              <th>Iterations</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {schedulers.map((scheduler) => (
+                              <tr key={scheduler.key}>
+                                <td>
+                                  <strong>{scheduler.name}</strong>
+                                  <small>{scheduler.key}</small>
+                                </td>
+                                <td>
+                                  {scheduler.pattern ??
+                                    (scheduler.every ? `Every ${scheduler.every} ms` : '—')}
+                                  <small>{scheduler.timeZone ?? 'Default time zone'}</small>
+                                </td>
+                                <td>{when(scheduler.next)}</td>
+                                <td>
+                                  {scheduler.iterationCount ?? '—'}
+                                  {scheduler.limit ? ` / ${scheduler.limit}` : ''}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {schedulers.length === 0 && (
+                          <div className="empty">No job schedulers are visible for this queue.</div>
+                        )}
+                      </div>
+                    </section>
                     <section className="panel">
                       <div className="panel-head">
                         <div>

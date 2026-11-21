@@ -60,24 +60,26 @@ test('browser shows queues and sanitized job detail; token stays in request head
           ? { workers: [], uninstrumentedLiveness: 'unknown' }
           : url.pathname.endsWith('/diagnostics')
             ? diagnostics
-            : url.pathname.endsWith('/jobs/failed-1')
-              ? {
-                  ...job,
-                  payload: { visibility: 'hidden', reason: 'policy' },
-                  returnValue: { visibility: 'hidden', reason: 'policy' },
-                  failureReason: 'synthetic failure',
-                  stacktrace: [],
-                  timeline: [],
-                }
-              : url.pathname.endsWith('/jobs')
-                ? { jobs: [job], nextOffset: null }
-                : [
-                    {
-                      name: 'email',
-                      counts: { waiting: 1, active: 0, delayed: 0, completed: 0, failed: 1 },
-                      paused: false,
-                    },
-                  ];
+            : url.pathname.endsWith('/schedulers')
+              ? []
+              : url.pathname.endsWith('/jobs/failed-1')
+                ? {
+                    ...job,
+                    payload: { visibility: 'hidden', reason: 'policy' },
+                    returnValue: { visibility: 'hidden', reason: 'policy' },
+                    failureReason: 'synthetic failure',
+                    stacktrace: [],
+                    timeline: [],
+                  }
+                : url.pathname.endsWith('/jobs')
+                  ? { jobs: [job], nextOffset: null }
+                  : [
+                      {
+                        name: 'email',
+                        counts: { waiting: 1, active: 0, delayed: 0, completed: 0, failed: 1 },
+                        paused: false,
+                      },
+                    ];
       await route.fulfill({ json: { success: true, data, meta } });
       return;
     }
@@ -134,15 +136,17 @@ test('dashboard fits a mobile viewport', async ({ page }) => {
         ? { workers: [], uninstrumentedLiveness: 'unknown' }
         : url.pathname.endsWith('/diagnostics')
           ? diagnostics
-          : url.pathname.endsWith('/jobs')
-            ? { jobs: [], nextOffset: null }
-            : [
-                {
-                  name: 'email',
-                  counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
-                  paused: false,
-                },
-              ];
+          : url.pathname.endsWith('/schedulers')
+            ? []
+            : url.pathname.endsWith('/jobs')
+              ? { jobs: [], nextOffset: null }
+              : [
+                  {
+                    name: 'email',
+                    counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
+                    paused: false,
+                  },
+                ];
       await route.fulfill({ json: { success: true, data, meta } });
       return;
     }
@@ -170,15 +174,17 @@ test('session-authorized embedded dashboard opens without a token prompt', async
         ? { workers: [], uninstrumentedLiveness: 'unknown' }
         : url.pathname.endsWith('/diagnostics')
           ? diagnostics
-          : url.pathname.endsWith('/jobs')
-            ? { jobs: [], nextOffset: null }
-            : [
-                {
-                  name: 'email',
-                  counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
-                  paused: false,
-                },
-              ];
+          : url.pathname.endsWith('/schedulers')
+            ? []
+            : url.pathname.endsWith('/jobs')
+              ? { jobs: [], nextOffset: null }
+              : [
+                  {
+                    name: 'email',
+                    counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
+                    paused: false,
+                  },
+                ];
       await route.fulfill({ json: { success: true, data, meta } });
       return;
     }
@@ -229,9 +235,11 @@ test('live queue stream reconnects after interruption while polling remains avai
         ? { workers: [], uninstrumentedLiveness: 'unknown' }
         : url.pathname.endsWith('/diagnostics')
           ? diagnostics
-          : url.pathname.endsWith('/jobs')
-            ? { jobs: [], nextOffset: null }
-            : queues;
+          : url.pathname.endsWith('/schedulers')
+            ? []
+            : url.pathname.endsWith('/jobs')
+              ? { jobs: [], nextOffset: null }
+              : queues;
       await route.fulfill({ json: { success: true, data, meta } });
       return;
     }

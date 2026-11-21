@@ -8,6 +8,7 @@ import {
   type RawJob,
   type ReadOnlyQueue,
   type RawFlow,
+  type SchedulerMetadata,
   type WorkerObservation,
 } from '../../core/src/monitor.js';
 
@@ -153,6 +154,21 @@ export class BullMqQueueAdapter implements ReadOnlyQueue {
             dependencies.nextFailedCursor,
         ),
     };
+  }
+
+  async listSchedulers(): Promise<SchedulerMetadata[]> {
+    const schedulers = await this.queue.getJobSchedulers(0, 49);
+    return schedulers.map((item) => ({
+      key: item.key,
+      name: item.name,
+      next: item.next,
+      every: item.every,
+      pattern: item.pattern,
+      iterationCount: item.iterationCount,
+      limit: item.limit,
+      endDate: item.endDate,
+      timeZone: item.tz,
+    }));
   }
 
   async getJobMetadata(id: string): Promise<JobMetadata | null> {

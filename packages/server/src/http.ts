@@ -353,12 +353,14 @@ export function createHttpHandler(config: HttpConfig) {
       const jobsMatch = /^\/api\/v1\/queues\/([^/]+)\/jobs$/.exec(path);
       const jobMatch = /^\/api\/v1\/queues\/([^/]+)\/jobs\/([^/]+)$/.exec(path);
       const flowMatch = /^\/api\/v1\/queues\/([^/]+)\/jobs\/([^/]+)\/flow$/.exec(path);
+      const schedulersMatch = /^\/api\/v1\/queues\/([^/]+)\/schedulers$/.exec(path);
       const diagnosticsMatch = /^\/api\/v1\/queues\/([^/]+)\/diagnostics$/.exec(path);
       const queueMatch = /^\/api\/v1\/queues\/([^/]+)$/.exec(path);
       const rawName =
         jobsMatch?.[1] ??
         jobMatch?.[1] ??
         flowMatch?.[1] ??
+        schedulersMatch?.[1] ??
         diagnosticsMatch?.[1] ??
         queueMatch?.[1];
       if (!rawName) return error(res, 404, 'INVALID_REQUEST', 'Route not found');
@@ -382,6 +384,30 @@ export function createHttpHandler(config: HttpConfig) {
           poller.getTrend(name),
         );
         return send(res, 200, { success: true, data: diagnostics, meta: responseMeta() });
+      }
+      if (schedulersMatch) {
+        const schedulers = await poller.runQueueRead(
+          name,
+          () => queue.listSchedulers?.() ?? Promise.resolve([]),
+        );
+        const meta = responseMeta();
+        meta.partial = schedulers.length === 50;
+        if (meta.partial) meta.warnings.push('Only the first 50 schedulers are shown');
+        return send(res, 200, {
+          success: true,
+          data: schedulers.map((item) => ({
+            key: item.key,
+            name: item.name,
+            next: item.next,
+            every: item.every,
+            pattern: item.pattern,
+            iterationCount: item.iterationCount,
+            limit: item.limit,
+            endDate: item.endDate,
+            timeZone: item.timeZone,
+          })),
+          meta,
+        });
       }
       if (flowMatch?.[2]) {
         const id = segment(flowMatch[2]);

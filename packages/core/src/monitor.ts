@@ -65,6 +65,18 @@ export interface RawFlow {
   partial: boolean;
 }
 
+export interface SchedulerMetadata {
+  key: string;
+  name: string;
+  next?: number;
+  every?: number;
+  pattern?: string;
+  iterationCount?: number;
+  limit?: number;
+  endDate?: number;
+  timeZone?: string;
+}
+
 export interface ReadOnlyQueue {
   readonly name: string;
   getCounts(): Promise<QueueCounts>;
@@ -75,6 +87,7 @@ export interface ReadOnlyQueue {
   listWorkers?(): Promise<WorkerObservation[]>;
   getOldestWaitingAt?(): Promise<number | null>;
   getFlow?(id: string): Promise<RawFlow | null>;
+  listSchedulers?(): Promise<SchedulerMetadata[]>;
   close?(): Promise<void>;
 }
 

@@ -172,6 +172,8 @@ test('worker telemetry labels only fresh instrumented heartbeats online', async 
   const key = 'queuelens:workers:demo:worker-1';
   values.set(key, JSON.stringify({ ...signaled, unexpectedSecret: 'never-return-this' }));
   assert.doesNotMatch(JSON.stringify(await adapter.listWorkers()), /never-return-this/);
+  values.set(key, JSON.stringify({ ...signaled, lastHeartbeat: Date.now() - 1_900 }));
+  assert.equal((await adapter.listWorkers())[0]?.state, 'online');
   values.set(key, JSON.stringify({ ...signaled, lastHeartbeat: Date.now() - 3_000 }));
   const [stale] = await adapter.listWorkers();
   assert.equal(stale?.state, 'stale');
@@ -184,6 +186,15 @@ test('worker telemetry labels only fresh instrumented heartbeats online', async 
 test('worker route enforces per-queue authorization and SSE streams authorized snapshots', async () => {
   const allowed = {
     ...fakeQueue('allowed'),
+    async listSchedulers() {
+      return [
+        {
+          key: 'schedule-1',
+          name: 'scheduled',
+          template: { data: { secret: 'never-return-this' } },
+        },
+      ];
+    },
     async getFlow() {
       return {
         parent: { id: 'secret-parent', queueKey: 'bull:hidden' },
@@ -229,6 +240,10 @@ test('worker route enforces per-queue authorization and SSE streams authorized s
   assert.equal(JSON.parse(flow.contents).data.parent, null);
   assert.equal(JSON.parse(flow.contents).meta.partial, true);
   assert.doesNotMatch(flow.contents, /secret-parent|secret-child/);
+  const schedulers = await call('/api/v1/queues/allowed/schedulers', 'Bearer secret');
+  assert.equal(schedulers.status, 200);
+  assert.equal(JSON.parse(schedulers.contents).data[0].key, 'schedule-1');
+  assert.doesNotMatch(schedulers.contents, /never-return-this/);
   const stream = await call('/api/v1/events', 'Bearer secret');
   assert.equal(stream.status, 200);
   assert.match(stream.contents, /retry: 3000/);

@@ -54,6 +54,14 @@ test('real BullMQ worker heartbeat and sampled diagnostics stay payload-free', a
     assert.ok(parentLinks?.childKeys.some((key) => key.endsWith(`:${childId}`)));
     const childLinks = await adapter.getFlow(childId);
     assert.equal(childLinks?.parent?.id, parentId);
+    await queue.upsertJobScheduler(
+      'schedule-1',
+      { every: 60_000 },
+      { name: 'scheduled', data: { secret: 'must-not-appear' } },
+    );
+    const schedulers = await adapter.listSchedulers();
+    assert.ok(schedulers.some((item) => item.key === 'schedule-1'));
+    assert.doesNotMatch(JSON.stringify(schedulers), /must-not-appear/);
   } finally {
     await telemetry.close();
     await worker.close();
