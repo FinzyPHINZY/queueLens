@@ -54,6 +54,7 @@ test('reads real BullMQ jobs without mutating or closing a caller-owned queue', 
     const summary = await fetch(`${base}/api/v1/queues/${name}`, { headers });
     assert.equal(summary.status, 200);
     const body = await summary.json();
+    assert.equal(body.success, true);
     assert.equal(body.data.counts.completed, 1);
     assert.equal(body.data.counts.failed, 1);
     assert.equal(body.data.counts.delayed, 1);
@@ -75,6 +76,7 @@ test('reads real BullMQ jobs without mutating or closing a caller-owned queue', 
     assert.equal(detail.status, 200);
     const raw = await detail.text();
     assert.doesNotMatch(raw, /must-not-appear/);
+    assert.equal(JSON.parse(raw).success, true);
     assert.equal(JSON.parse(raw).data.state, 'failed');
     assert.equal(JSON.parse(raw).data.failureReason, 'synthetic failure');
 
@@ -86,7 +88,9 @@ test('reads real BullMQ jobs without mutating or closing a caller-owned queue', 
     await removed?.remove();
     const gone = await fetch(`${base}/api/v1/queues/${name}/jobs/fail-1`, { headers });
     assert.equal(gone.status, 404);
-    assert.equal((await gone.json()).error.code, 'JOB_NOT_FOUND');
+    const missing = await gone.json();
+    assert.equal(missing.success, false);
+    assert.equal(missing.error.code, 'JOB_NOT_FOUND');
   } finally {
     server.close();
     await worker.close();

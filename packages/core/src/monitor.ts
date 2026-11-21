@@ -74,8 +74,13 @@ export type MonitorErrorCode =
   | 'INTERNAL_ERROR';
 
 export type ApiResponse<T> =
-  | { data: T; meta: ResponseMeta }
-  | { data: null; meta: ResponseMeta; error: { code: MonitorErrorCode; message: string } };
+  | { success: true; data: T; meta: ResponseMeta }
+  | {
+      success: false;
+      data: null;
+      meta: ResponseMeta;
+      error: { code: MonitorErrorCode; message: string };
+    };
 
 export function responseMeta(observedAt = new Date()): ResponseMeta {
   return {

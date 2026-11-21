@@ -21,7 +21,9 @@ type Detail = Job & {
   failureReason: string;
   stacktrace: string[];
 };
-type Envelope<T> = { data: T; meta: Meta; error?: { message: string } };
+type Envelope<T> =
+  | { success: true; data: T; meta: Meta }
+  | { success: false; data: null; meta: Meta; error: { code: string; message: string } };
 const states = [
   'failed',
   'waiting',
@@ -52,14 +54,14 @@ function App() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const request = useCallback(
-    async <T,>(path: string): Promise<Envelope<T>> => {
+    async <T,>(path: string): Promise<Extract<Envelope<T>, { success: true }>> => {
       const response = await fetch(`${apiBase}/api/v1${path}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         cache: 'no-store',
       });
       const body = (await response.json()) as Envelope<T>;
-      if (!response.ok || body.error)
-        throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+      if (!body.success) throw new Error(body.error.message);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return body;
     },
     [token],

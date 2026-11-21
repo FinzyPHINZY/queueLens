@@ -36,10 +36,12 @@ test('standalone serves a real queue and dashboard with protected job data', asy
     assert.equal((await fetch(`${base}/api/v1/queues`)).status, 401);
     const headers = { authorization: 'Bearer test-token' };
     const directory = await (await fetch(`${base}/api/v1/queues`, { headers })).json();
+    assert.equal(directory.success, true);
     assert.equal(directory.data[0].counts.waiting, 1);
     const detail = await (
       await fetch(`${base}/api/v1/queues/${name}/jobs/one`, { headers })
     ).text();
+    assert.equal(JSON.parse(detail).success, true);
     assert.equal(JSON.parse(detail).data.state, 'waiting');
     assert.doesNotMatch(detail, /integration-secret/);
   } finally {
@@ -82,7 +84,9 @@ test('Express mount serves assets and authorizes queue reads with a host session
       headers: { cookie: 'session=allowed' },
     });
     assert.equal(authorized.status, 200);
-    assert.equal((await authorized.json()).data[0].counts.waiting, 1);
+    const body = await authorized.json();
+    assert.equal(body.success, true);
+    assert.equal(body.data[0].counts.waiting, 1);
   } finally {
     await new Promise<void>((closed) => server.close(() => closed()));
     await monitor.close();

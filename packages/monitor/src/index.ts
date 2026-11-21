@@ -9,6 +9,7 @@ import { validateDisclosurePolicy } from '../../core/src/redaction.js';
 import { createHttpHandler, type HttpConfig } from '../../server/src/http.js';
 
 export type { AuthTarget, Authorize, HttpConfig } from '../../server/src/http.js';
+export type { ApiResponse, MonitorErrorCode, ResponseMeta } from '../../core/src/monitor.js';
 export type { DisclosurePolicy } from '../../core/src/redaction.js';
 export type { PollingOptions } from '../../core/src/poller.js';
 

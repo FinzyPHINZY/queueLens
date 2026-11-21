@@ -61,8 +61,14 @@ function send<T>(res: ServerResponse, status: number, body: ApiResponse<T>): voi
   res.end(JSON.stringify(body));
 }
 
-function error(res: ServerResponse, status: number, code: MonitorErrorCode, message: string): void {
-  send(res, status, { data: null, meta: responseMeta(), error: { code, message } });
+function error(
+  res: ServerResponse,
+  status: number,
+  code: MonitorErrorCode,
+  message: string,
+  meta = responseMeta(),
+): void {
+  send(res, status, { success: false, data: null, meta, error: { code, message } });
 }
 
 function segment(raw: string): string | null {
@@ -175,7 +181,7 @@ export function createHttpHandler(config: HttpConfig) {
     }
     if (await serveDashboard(path, res, config.dashboardDir)) return;
     if (path === '/api/v1/health') {
-      return send(res, 200, { data: { status: 'ok' }, meta: responseMeta() });
+      return send(res, 200, { success: true, data: { status: 'ok' }, meta: responseMeta() });
     }
     if (config.token && !tokenMatches(req.headers.authorization, config.token)) {
       return error(res, 401, 'UNAUTHORIZED', 'Access token required');
@@ -187,9 +193,14 @@ export function createHttpHandler(config: HttpConfig) {
           return error(res, 403, 'FORBIDDEN', 'Access denied');
         }
         const result = await poller.getAll();
-        return send(res, result.meta.partial ? 503 : 200, {
-          data: { status: result.meta.partial ? 'degraded' : 'ready' },
-          meta: { ...result.meta, warnings: [] },
+        const meta = { ...result.meta, warnings: [] };
+        if (result.meta.partial) {
+          return error(res, 503, 'REDIS_UNAVAILABLE', 'Monitor is degraded', meta);
+        }
+        return send(res, 200, {
+          success: true,
+          data: { status: 'ready' },
+          meta,
         });
       }
       if (path === '/api/v1/workers') {
@@ -197,6 +208,7 @@ export function createHttpHandler(config: HttpConfig) {
           return error(res, 403, 'FORBIDDEN', 'Access denied');
         }
         return send(res, 200, {
+          success: true,
           data: {
             liveness: 'unknown',
             message: 'Per-worker liveness requires opt-in instrumentation.',
@@ -238,7 +250,7 @@ export function createHttpHandler(config: HttpConfig) {
         meta.partial = partial;
         meta.warnings = warnings;
         meta.freshnessMs = observedAt ? Date.now() - observedAt : 0;
-        return send(res, 200, { data: snapshots, meta });
+        return send(res, 200, { success: true, data: snapshots, meta });
       }
 
       const jobsMatch = /^\/api\/v1\/queues\/([^/]+)\/jobs$/.exec(path);
@@ -257,14 +269,18 @@ export function createHttpHandler(config: HttpConfig) {
 
       if (queueMatch) {
         const snapshot = await poller.get(name);
-        return send(res, 200, snapshot);
+        return send(res, 200, { success: true, ...snapshot });
       }
       if (jobMatch?.[2]) {
         const id = segment(jobMatch[2]);
         if (!id) return error(res, 400, 'INVALID_REQUEST', 'Invalid job ID');
         const job = await poller.budget.run(() => queue.getJob(id));
         if (!job) return error(res, 404, 'JOB_NOT_FOUND', 'Job not found');
-        return send(res, 200, { data: safeJobDetail(job, config.redaction), meta: responseMeta() });
+        return send(res, 200, {
+          success: true,
+          data: safeJobDetail(job, config.redaction),
+          meta: responseMeta(),
+        });
       }
       if (jobsMatch) {
         const state = url.searchParams.get('state') ?? 'failed';
@@ -311,6 +327,7 @@ export function createHttpHandler(config: HttpConfig) {
             'Name/time filtering inspected only the 500 newest jobs in this state',
           );
         return send(res, 200, {
+          success: true,
           data: {
             jobs: page.map(safeJobSummary),
             nextOffset: page.length === limit ? offset + limit : null,

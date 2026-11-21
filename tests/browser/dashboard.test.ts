@@ -29,7 +29,12 @@ test('browser shows queues and sanitized job detail; token stays in request head
       if (!route.request().headers().authorization) {
         await route.fulfill({
           status: 401,
-          json: { data: null, meta, error: { message: 'Access token required' } },
+          json: {
+            success: false,
+            data: null,
+            meta,
+            error: { code: 'UNAUTHORIZED', message: 'Access token required' },
+          },
         });
         return;
       }
@@ -51,7 +56,7 @@ test('browser shows queues and sanitized job detail; token stays in request head
                 paused: false,
               },
             ];
-      await route.fulfill({ json: { data, meta } });
+      await route.fulfill({ json: { success: true, data, meta } });
       return;
     }
     const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -87,7 +92,12 @@ test('dashboard fits a mobile viewport', async ({ page }) => {
       if (!route.request().headers().authorization) {
         await route.fulfill({
           status: 401,
-          json: { data: null, meta, error: { message: 'Access token required' } },
+          json: {
+            success: false,
+            data: null,
+            meta,
+            error: { code: 'UNAUTHORIZED', message: 'Access token required' },
+          },
         });
         return;
       }
@@ -100,7 +110,7 @@ test('dashboard fits a mobile viewport', async ({ page }) => {
               paused: false,
             },
           ];
-      await route.fulfill({ json: { data, meta } });
+      await route.fulfill({ json: { success: true, data, meta } });
       return;
     }
     const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -131,7 +141,7 @@ test('session-authorized embedded dashboard opens without a token prompt', async
               paused: false,
             },
           ];
-      await route.fulfill({ json: { data, meta } });
+      await route.fulfill({ json: { success: true, data, meta } });
       return;
     }
     const path =

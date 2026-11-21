@@ -110,6 +110,7 @@ test('authorization, page caps and exact job lookup are enforced', async () => {
   assert.equal((await call(openHandler, '/api/v1/queues/demo/jobs?offset=10001')).status, 400);
   assert.equal((await call(openHandler, '/api/v1/queues/demo/jobs?state=unknown')).status, 400);
   const page = await call(openHandler, '/api/v1/queues/demo/jobs?state=failed&limit=1');
+  assert.equal(page.body.success, true);
   assert.equal(page.body.data.jobs[0].id, 'one');
   assert.doesNotMatch(JSON.stringify(page.body), /progress-secret|nested-secret/);
   const missing = await call(openHandler, '/api/v1/queues/demo/jobs/removed');
@@ -132,6 +133,17 @@ test('poller returns stale last-known data after a queue read fails', async () =
   const stale = await poller.get('demo');
   assert.equal(stale.meta.partial, true);
   assert.equal(stale.data.counts.failed, 1);
+  const handler = createHttpHandler({
+    registry: new QueueRegistry([unstable]),
+    token: 'secret',
+    poller,
+  });
+  const readiness = await call(handler, '/api/v1/ready');
+  assert.equal(readiness.status, 503);
+  assert.equal(readiness.body.success, false);
+  assert.equal(readiness.body.data, null);
+  assert.equal(readiness.body.meta.partial, true);
+  assert.equal(readiness.body.error.code, 'REDIS_UNAVAILABLE');
   poller.stop();
 });
 
