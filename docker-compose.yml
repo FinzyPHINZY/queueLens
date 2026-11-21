@@ -34,6 +34,7 @@ services:
       MONITOR_HOST: 0.0.0.0
       MONITOR_QUEUES: demo
       MONITOR_TOKEN: ${MONITOR_TOKEN:?Set MONITOR_TOKEN}
+      MONITOR_SHOW_FAILURE_DETAILS: 'true'
     ports:
       - '127.0.0.1:3000:3000'
     depends_on:

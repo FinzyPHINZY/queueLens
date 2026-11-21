@@ -26,3 +26,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm check
+      - name: Install browser
+        run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:browser

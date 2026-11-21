@@ -17,6 +17,15 @@ const queue: ReadOnlyQueue = {
       'waiting-children': 0,
     };
   },
+  async isPaused() {
+    return false;
+  },
+  async listJobs() {
+    return [];
+  },
+  async getJob() {
+    return null;
+  },
   async getJobMetadata(id) {
     return id === 'known'
       ? { id, name: 'sample', state: 'waiting', attemptsMade: 0, timestamp: 1 }

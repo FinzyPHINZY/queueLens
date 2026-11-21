@@ -1,5 +1,9 @@
 node_modules/
 dist/
+/apps/dashboard/dist/
+/packages/monitor/dist/
+/test-results/
+/playwright-report/
 .env
 *.log
 .DS_Store

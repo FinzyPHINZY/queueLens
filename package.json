@@ -6,7 +6,9 @@
   "packageManager": "pnpm@10.20.0",
   "pnpm": {
     "overrides": {
-      "ignore": "7.0.6"
+      "ignore": "7.0.6",
+      "@types/express-serve-static-core": "5.1.2",
+      "qs": "6.15.3"
     }
   },
   "engines": {
@@ -17,27 +19,38 @@
     "start": "node dist/apps/standalone/src/main.js",
     "example:seed": "tsx apps/example-bullmq/src/seed.ts",
     "example:worker": "tsx apps/example-bullmq/src/worker.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && pnpm dashboard:build && node scripts/prepare-package.mjs",
+    "dashboard:build": "vite build apps/dashboard --config apps/dashboard/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm test:unit && pnpm test:integration",
-    "test:unit": "node --import tsx tests/unit/http.test.ts && node --import tsx tests/unit/adapter.test.ts",
+    "test:unit": "node --import tsx tests/unit/http.test.ts && node --import tsx tests/unit/adapter.test.ts && node --import tsx tests/unit/stage1.test.ts",
     "test:integration": "node --import tsx tests/integration/bullmq.test.ts",
+    "test:browser": "playwright test tests/browser/dashboard.test.ts",
+    "benchmark": "pnpm build && node scripts/benchmark.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
   },
   "dependencies": {
     "bullmq": "5.81.5",
-    "ioredis": "5.11.1"
+    "express": "5.2.1",
+    "ioredis": "5.11.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@playwright/test": "1.59.1",
+    "@types/express": "5.0.5",
     "@types/node": "22.19.17",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
     "eslint": "9.39.5",
     "prettier": "3.6.2",
     "tsx": "4.23.1",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.53.1"
+    "typescript-eslint": "8.53.1",
+    "vite": "7.3.2"
   }
 }

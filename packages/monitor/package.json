@@ -1,0 +1,25 @@
+{
+  "name": "@queuelens/monitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only BullMQ queue monitor preview",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/packages/monitor/src/index.d.ts",
+      "default": "./dist/packages/monitor/src/index.js"
+    }
+  },
+  "peerDependencies": {
+    "bullmq": "^5.81.5"
+  },
+  "dependencies": {
+    "ioredis": "5.11.1"
+  }
+}
