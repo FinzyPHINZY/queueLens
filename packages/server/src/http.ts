@@ -12,6 +12,7 @@ import {
   type QueueSnapshot,
 } from '../../core/src/monitor.js';
 import { SnapshotPoller, type PollingOptions } from '../../core/src/poller.js';
+import { errorCategory, sampleQueueDiagnostics } from '../../core/src/diagnostics.js';
 import { ReadBudgetExceededError, ReadTimeoutError } from '../../core/src/read-budget.js';
 import {
   safeJobDetail,
@@ -152,6 +153,79 @@ export function createHttpHandler(config: HttpConfig) {
     return config.authorize ? Boolean(await config.authorize(req, target)) : true;
   }
 
+  async function allowedQueues(req: IncomingMessage): Promise<string[]> {
+    const allowed: string[] = [];
+    for (const name of config.registry.names()) {
+      if (await permitted(req, { queueName: name, permission: 'queue:read' })) allowed.push(name);
+    }
+    return allowed;
+  }
+
+  async function streamSnapshots(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const names = await allowedQueues(req);
+    if (config.registry.names().length > 0 && names.length === 0) {
+      error(res, 403, 'FORBIDDEN', 'Access denied');
+      return;
+    }
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+      'x-content-type-options': 'nosniff',
+    });
+    res.write('retry: 3000\n\n');
+    let closed = false;
+    let busy = false;
+    const close = () => {
+      closed = true;
+      clearInterval(timer);
+    };
+    const emit = async () => {
+      if (closed || busy) return;
+      busy = true;
+      try {
+        const current = await allowedQueues(req);
+        if (
+          current.length !== names.length ||
+          current.some((name, index) => name !== names[index])
+        ) {
+          res.end();
+          close();
+          return;
+        }
+        const results = await Promise.allSettled(names.map((name) => poller.get(name)));
+        const data = results.flatMap((result) =>
+          result.status === 'fulfilled' ? [result.value.data] : [],
+        );
+        const observations = results.flatMap((result) =>
+          result.status === 'fulfilled' ? [result.value.meta] : [],
+        );
+        const newest = Math.max(0, ...observations.map((item) => Date.parse(item.observedAt)));
+        const meta = responseMeta(new Date(newest || Date.now()));
+        meta.freshnessMs = newest ? Date.now() - newest : 0;
+        meta.partial = results.some(
+          (result) => result.status === 'rejected' || result.value.meta.partial,
+        );
+        meta.warnings = [
+          ...names
+            .filter((_, index) => results[index]?.status === 'rejected')
+            .map((name) => `${name}: unavailable`),
+          ...observations.flatMap((item) => item.warnings),
+        ];
+        if (!closed)
+          res.write(`event: queues\ndata: ${JSON.stringify({ success: true, data, meta })}\n\n`);
+      } catch {
+        if (!closed) res.write(': update unavailable\n\n');
+      } finally {
+        busy = false;
+      }
+    };
+    void emit();
+    const timer = setInterval(() => void emit(), Math.max(1_000, poller.intervalMs));
+    timer.unref();
+    res.once('close', close);
+  }
+
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (
       (req.url?.length ?? 0) > 2_048 ||
@@ -188,6 +262,7 @@ export function createHttpHandler(config: HttpConfig) {
     }
 
     try {
+      if (path === '/api/v1/events') return streamSnapshots(req, res);
       if (path === '/api/v1/ready') {
         if (!(await permitted(req, { permission: 'queue:read' }))) {
           return error(res, 403, 'FORBIDDEN', 'Access denied');
@@ -204,16 +279,38 @@ export function createHttpHandler(config: HttpConfig) {
         });
       }
       if (path === '/api/v1/workers') {
-        if (!(await permitted(req, { permission: 'queue:read' }))) {
-          return error(res, 403, 'FORBIDDEN', 'Access denied');
+        const names = config.registry.names();
+        const allowed: string[] = [];
+        for (const name of names) {
+          if (await permitted(req, { queueName: name, permission: 'queue:read' }))
+            allowed.push(name);
         }
+        if (names.length > 0 && allowed.length === 0)
+          return error(res, 403, 'FORBIDDEN', 'Access denied');
+        const results = await Promise.allSettled(
+          allowed.map((name) =>
+            poller.runQueueRead(
+              name,
+              () => config.registry.get(name)?.listWorkers?.() ?? Promise.resolve([]),
+            ),
+          ),
+        );
+        const workers = results.flatMap((result) =>
+          result.status === 'fulfilled' ? result.value : [],
+        );
+        const meta = responseMeta();
+        meta.partial = results.some((result) => result.status === 'rejected');
+        meta.warnings = allowed
+          .filter((_, index) => results[index]?.status === 'rejected')
+          .map((name) => `${name}: worker telemetry unavailable`);
         return send(res, 200, {
           success: true,
           data: {
-            liveness: 'unknown',
-            message: 'Per-worker liveness requires opt-in instrumentation.',
+            workers,
+            uninstrumentedLiveness: 'unknown',
+            message: 'Only instrumented workers report liveness; other workers remain unknown.',
           },
-          meta: responseMeta(),
+          meta,
         });
       }
       if (path === '/api/v1/queues') {
@@ -255,14 +352,21 @@ export function createHttpHandler(config: HttpConfig) {
 
       const jobsMatch = /^\/api\/v1\/queues\/([^/]+)\/jobs$/.exec(path);
       const jobMatch = /^\/api\/v1\/queues\/([^/]+)\/jobs\/([^/]+)$/.exec(path);
+      const flowMatch = /^\/api\/v1\/queues\/([^/]+)\/jobs\/([^/]+)\/flow$/.exec(path);
+      const diagnosticsMatch = /^\/api\/v1\/queues\/([^/]+)\/diagnostics$/.exec(path);
       const queueMatch = /^\/api\/v1\/queues\/([^/]+)$/.exec(path);
-      const rawName = jobsMatch?.[1] ?? jobMatch?.[1] ?? queueMatch?.[1];
+      const rawName =
+        jobsMatch?.[1] ??
+        jobMatch?.[1] ??
+        flowMatch?.[1] ??
+        diagnosticsMatch?.[1] ??
+        queueMatch?.[1];
       if (!rawName) return error(res, 404, 'INVALID_REQUEST', 'Route not found');
       const name = segment(rawName);
       if (!name) return error(res, 400, 'INVALID_REQUEST', 'Invalid queue name');
       const queue = config.registry.get(name);
       if (!queue) return error(res, 404, 'QUEUE_NOT_FOUND', 'Queue not found');
-      const permission = jobsMatch || jobMatch ? 'job:read' : 'queue:read';
+      const permission = jobsMatch || jobMatch || flowMatch ? 'job:read' : 'queue:read';
       if (!(await permitted(req, { queueName: name, permission }))) {
         return error(res, 403, 'FORBIDDEN', 'Access denied');
       }
@@ -271,10 +375,57 @@ export function createHttpHandler(config: HttpConfig) {
         const snapshot = await poller.get(name);
         return send(res, 200, { success: true, ...snapshot });
       }
+      if (diagnosticsMatch) {
+        const diagnostics = await sampleQueueDiagnostics(
+          queue,
+          (operation) => poller.runQueueRead(name, operation),
+          poller.getTrend(name),
+        );
+        return send(res, 200, { success: true, data: diagnostics, meta: responseMeta() });
+      }
+      if (flowMatch?.[2]) {
+        const id = segment(flowMatch[2]);
+        if (!id) return error(res, 400, 'INVALID_REQUEST', 'Invalid job ID');
+        const flow = await poller.runQueueRead(
+          name,
+          () => queue.getFlow?.(id) ?? Promise.resolve(null),
+        );
+        if (!flow) return error(res, 404, 'JOB_NOT_FOUND', 'Job not found');
+        const linked = async (key: string) => {
+          for (const candidate of config.registry.names().sort((a, b) => b.length - a.length)) {
+            const marker = `:${candidate}:`;
+            const position = key.lastIndexOf(marker);
+            if (position < 0) continue;
+            const jobId = key.slice(position + marker.length);
+            if (!jobId || jobId.length > 128) continue;
+            if (await permitted(req, { queueName: candidate, permission: 'job:read' }))
+              return { queue: candidate, id: jobId };
+          }
+          return null;
+        };
+        const parent = flow.parent
+          ? await linked(`${flow.parent.queueKey}:${flow.parent.id}`)
+          : null;
+        const children = (await Promise.all(flow.childKeys.map(linked))).filter(
+          (item) => item !== null,
+        );
+        const meta = responseMeta();
+        meta.partial =
+          flow.partial ||
+          children.length !== flow.childKeys.length ||
+          Boolean(flow.parent && !parent);
+        if (meta.partial)
+          meta.warnings.push('Some flow links are truncated or outside your authorized queues');
+        return send(res, 200, {
+          success: true,
+          data: { parent, children, source: 'bullmq-public-api' },
+          meta,
+        });
+      }
       if (jobMatch?.[2]) {
         const id = segment(jobMatch[2]);
         if (!id) return error(res, 400, 'INVALID_REQUEST', 'Invalid job ID');
-        const job = await poller.budget.run(() => queue.getJob(id));
+        const job = await poller.runQueueRead(name, () => queue.getJob(id));
         if (!job) return error(res, 404, 'JOB_NOT_FOUND', 'Job not found');
         return send(res, 200, {
           success: true,
@@ -289,6 +440,8 @@ export function createHttpHandler(config: HttpConfig) {
         const from = timestamp(url.searchParams.get('from'));
         const to = timestamp(url.searchParams.get('to'));
         const filterName = url.searchParams.get('name');
+        const attemptsMin = positiveInteger(url.searchParams.get('attemptsMin'), 0, 100);
+        const categoryFilter = url.searchParams.get('errorCategory');
         if (
           !observedStates.includes(state as ObservedState) ||
           !limit ||
@@ -296,15 +449,19 @@ export function createHttpHandler(config: HttpConfig) {
           from === null ||
           to === null ||
           (from && to && (from > to || to - from > 7 * 24 * 60 * 60 * 1_000)) ||
-          (filterName && filterName.length > 128)
+          (filterName && filterName.length > 128) ||
+          attemptsMin === null ||
+          (categoryFilter !== null && state !== 'failed') ||
+          (categoryFilter !== null &&
+            !['timeout', 'rate_limit', 'validation', 'other', 'unknown'].includes(categoryFilter))
         ) {
           return error(res, 400, 'INVALID_FILTER', 'Invalid job filter');
         }
-        const filtered = Boolean(filterName || from || to);
+        const filtered = Boolean(filterName || from || to || attemptsMin || categoryFilter);
         if (filtered && offset > 500)
           return error(res, 400, 'INVALID_FILTER', 'Filtered offset exceeds 500');
         const scanLimit = filtered ? 500 : limit;
-        const raw = await poller.budget.run(() =>
+        const raw = await poller.runQueueRead(name, () =>
           queue.listJobs({
             state: state as ObservedState,
             offset: filtered ? 0 : offset,
@@ -316,16 +473,17 @@ export function createHttpHandler(config: HttpConfig) {
               (job) =>
                 (!filterName || job.name === filterName) &&
                 (!from || job.timestamp >= from) &&
-                (!to || job.timestamp <= to),
+                (!to || job.timestamp <= to) &&
+                (!attemptsMin || job.attemptsMade >= attemptsMin) &&
+                (!categoryFilter || errorCategory(job.failedReason) === categoryFilter),
             )
           : raw;
         const page = filtered ? matches.slice(offset, offset + limit) : matches;
         const meta = responseMeta();
         meta.partial = filtered && raw.length === scanLimit;
         if (meta.partial)
-          meta.warnings.push(
-            'Name/time filtering inspected only the 500 newest jobs in this state',
-          );
+          meta.warnings.push('Filtering inspected only the 500 newest jobs in this state');
+        if (offset > 0) meta.warnings.push('Offset pages can shift while jobs change state');
         return send(res, 200, {
           success: true,
           data: {

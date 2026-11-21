@@ -1,5 +1,6 @@
 import { Worker } from 'bullmq';
 import { redisOptions } from '../../../packages/bullmq-adapter/src/connection.js';
+import { instrumentWorker } from '../../../packages/monitor/src/index.js';
 
 const worker = new Worker(
   'demo',
@@ -20,8 +21,10 @@ const worker = new Worker(
 worker.on('completed', (job) => console.log(`Completed ${job.id}`));
 worker.on('failed', (job) => console.log(`Failed ${job?.id}`));
 worker.on('error', (cause) => console.error('Demo worker error:', cause.message));
+const telemetry = instrumentWorker(worker, { concurrency: 1, version: 'demo' });
 
 async function shutdown() {
+  await telemetry.close();
   await worker.close();
 }
 process.once('SIGINT', () => void shutdown());

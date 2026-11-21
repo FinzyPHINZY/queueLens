@@ -1,6 +1,6 @@
 # QueueLens
 
-QueueLens is a self-hosted, read-only BullMQ monitor. Stage 1 adds a responsive dashboard, job pages, an inspector, bounded Redis reads, stale snapshots, and server-side redaction. **QueueLens is a working name.** The npm scope and public release are still being verified.
+QueueLens is a self-hosted, read-only BullMQ monitor. Stage 2 adds optional worker heartbeats, live queue updates, bounded diagnostics, and queue comparison to the Stage 1 dashboard. **QueueLens is a working name.** The npm scope and public release are still being verified.
 
 ## Requirements
 
@@ -17,7 +17,7 @@ docker compose up --build -d
 
 Open <http://127.0.0.1:3000> and enter the token. Compose seeds completed and failed jobs. Redis and the monitor are published on localhost only. For a local Redis instance, run `pnpm example:worker`, `pnpm example:seed`, and `MONITOR_TOKEN=... pnpm dev` in separate terminals.
 
-Standalone configuration: `REDIS_URL` (default `redis://127.0.0.1:6379`), `MONITOR_QUEUES` (comma-separated; default `demo`), `MONITOR_HOST` (default `127.0.0.1`), `MONITOR_PORT` (default `3000`), `MONITOR_POLL_INTERVAL_MS` (1000–60000; default 5000), `MONITOR_MAX_READS` (1–16; default 4), and `MONITOR_QUERY_TIMEOUT_MS` (100–30000; default 2000). `MONITOR_TOKEN` is required. Use TLS and an independent long random token when exposing the monitor through a trusted proxy.
+Standalone configuration: `REDIS_URL` (default `redis://127.0.0.1:6379`), `MONITOR_QUEUES` (comma-separated; default `demo`), `MONITOR_HOST` (default `127.0.0.1`), `MONITOR_PORT` (default `3000`), `MONITOR_POLL_INTERVAL_MS` (1000–60000; default 5000), `MONITOR_MAX_READS` (1–16; default 4), `MONITOR_MAX_READS_PER_QUEUE` (1–8; default 2), and `MONITOR_QUERY_TIMEOUT_MS` (100–30000; default 2000). `MONITOR_TOKEN` is required. Use TLS and an independent long random token when exposing the monitor through a trusted proxy.
 
 Disclosure settings are `MONITOR_PAYLOAD_ACCESS=deny|allow` (default deny), comma-separated `MONITOR_ALLOWED_PATHS` and `MONITOR_REDACT_PATHS` JSON Pointers, and `MONITOR_SHOW_FAILURE_DETAILS=true` (default false). The Compose demo explicitly enables sanitized failure details for its synthetic jobs.
 
@@ -44,11 +44,32 @@ app.use('/monitor', monitor.handler);
 
 You can also supply an async `authorize(request, target)` callback backed by your application's session and role checks, alone or alongside `token` to require both. Permissions are `queue:read` and `job:read`; queue names are passed to the callback. For callback-only session auth, the dashboard probes the same-origin API and opens without a token prompt when access is granted. `createStandaloneMonitor` owns and closes the queues it creates.
 
+## Optional worker instrumentation
+
+Call `instrumentWorker` beside an existing BullMQ worker to publish payload-free heartbeats to QueueLens-owned Redis keys. It uses the worker's public Redis client and never changes BullMQ job state. Close telemetry before closing the worker.
+
+```ts
+import { instrumentWorker } from '@queuelens/monitor';
+
+const telemetry = instrumentWorker(worker, {
+  id: 'email-worker-1',
+  concurrency: 4,
+  version: '2026.11',
+  heartbeatIntervalMs: 5_000,
+  heartbeatTtlMs: 15_000,
+});
+// On shutdown: await telemetry.close(); await worker.close();
+```
+
+Instrumented workers report heartbeat age, active job IDs, cumulative event counts, one-minute event-derived throughput, and stalled signals. A missed TTL marks a heartbeat **stale**, not a proven process death. Normal shutdown removes the record; a crashed worker remains visible until its Redis key expires. Workers without instrumentation remain **unknown**. Keep worker IDs, host labels, versions, and job IDs free of secrets.
+
 ## Read-only API
 
-All data routes require authorization. `GET /api/v1/health` is a minimal unauthenticated liveness check. `GET /api/v1/ready` is protected and reports degraded Redis state. `GET /api/v1/queues` lists authorized queues; `GET /api/v1/queues/:name` returns counts and pause state; `GET /api/v1/queues/:name/jobs` lists jobs; `GET /api/v1/queues/:name/jobs/:id` returns one job or `JOB_NOT_FOUND`. `GET /api/v1/workers` reports worker liveness as unknown because the monitor does not instrument workers yet. Other methods return 405.
+All data routes require authorization. `GET /api/v1/health` is a minimal unauthenticated liveness check. `GET /api/v1/ready` is protected and reports degraded Redis state. `GET /api/v1/queues` lists authorized queues; `GET /api/v1/queues/:name` returns counts, pause state, and oldest waiting timestamp; `GET /api/v1/queues/:name/jobs` lists jobs; `GET /api/v1/queues/:name/jobs/:id` returns one job or `JOB_NOT_FOUND`. `GET /api/v1/queues/:name/jobs/:id/flow` returns authorized parent and child links (at most 50). `GET /api/v1/workers` returns only instrumented workers. `GET /api/v1/queues/:name/diagnostics` returns bounded samples, and `GET /api/v1/events` streams authorized queue snapshots as SSE. Other methods return 405.
 
-Job pages accept `state` (default `failed`), `limit` (1–100; default 50), `offset` (0–10000), exact `name`, and `from`/`to` millisecond timestamps (maximum seven-day range). Name/time filtering scans at most the newest 500 jobs in one state and flags partial results. `nextOffset` is a navigation hint, not a stable cursor under concurrent queue changes.
+Job pages accept `state` (default `failed`), `limit` (1–100; default 50), `offset` (0–10000), exact `name`, `attemptsMin` (0–100), `errorCategory` for failed jobs (`timeout`, `rate_limit`, `validation`, `other`, or `unknown`), and `from`/`to` millisecond timestamps (maximum seven-day range). Filtered pages scan at most the newest 500 jobs in one state and flag partial results. `nextOffset` is a navigation hint, not a stable cursor under concurrent queue changes.
+
+Diagnostics inspect at most the newest 100 retained completed and failed jobs in a five-minute window. Completion/failure rates, retries, wait time, and processing percentiles are **sampled**; p95 needs 20 duration samples and p99 needs 100. Removed jobs and missing collection periods can lower the displayed values. Backlog trend points are in-memory **samples** (last 60 polls), reset on monitor restart, and can contain gaps. Queue counts and pause state come from BullMQ public getters; worker throughput is **event-derived** only for instrumented workers. The dashboard reconnects SSE after interruption and polls when the stream is unavailable.
 
 Responses use `{ success: true, data, meta }` or `{ success: false, data: null, meta, error: { code, message } }`. `meta` includes observation time, freshness, partial status, and warnings. Successful responses have no generic message; error messages are for people, while `error.code` is stable for clients. A degraded readiness check returns HTTP 503 with `success: false` and `meta.partial: true`.
 

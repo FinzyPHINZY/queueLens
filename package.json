@@ -26,8 +26,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm test:unit && pnpm test:integration",
-    "test:unit": "node --import tsx tests/unit/http.test.ts && node --import tsx tests/unit/adapter.test.ts && node --import tsx tests/unit/stage1.test.ts",
-    "test:integration": "node --import tsx tests/integration/bullmq.test.ts && node --import tsx tests/integration/standalone.test.ts",
+    "test:unit": "node --import tsx tests/unit/http.test.ts && node --import tsx tests/unit/adapter.test.ts && node --import tsx tests/unit/stage1.test.ts && node --import tsx tests/unit/stage2.test.ts",
+    "test:integration": "node --import tsx tests/integration/bullmq.test.ts && node --import tsx tests/integration/standalone.test.ts && node --import tsx tests/integration/stage2.test.ts",
     "test:browser": "playwright test tests/browser/dashboard.test.ts",
     "benchmark": "pnpm build && node scripts/benchmark.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
