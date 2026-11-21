@@ -42,7 +42,7 @@ app.use('/monitor', monitor.handler);
 // On application shutdown: await monitor.close(); await queue.close();
 ```
 
-You can also supply an async `authorize(request, target)` callback backed by your application's session and role checks, alone or alongside `token` to require both. Permissions are `queue:read` and `job:read`; queue names are passed to the callback. The dashboard token form is intended for bearer-token mode; callback-only integrations can call the API directly. `createStandaloneMonitor` owns and closes the queues it creates.
+You can also supply an async `authorize(request, target)` callback backed by your application's session and role checks, alone or alongside `token` to require both. Permissions are `queue:read` and `job:read`; queue names are passed to the callback. For callback-only session auth, the dashboard probes the same-origin API and opens without a token prompt when access is granted. `createStandaloneMonitor` owns and closes the queues it creates.
 
 ## Read-only API
 

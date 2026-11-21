@@ -35,6 +35,7 @@ const apiBase = window.location.pathname.replace(/\/$/, '');
 
 function App() {
   const [token, setToken] = useState('');
+  const [connected, setConnected] = useState(false);
   const [draft, setDraft] = useState('');
   const [queues, setQueues] = useState<Queue[]>([]);
   const [meta, setMeta] = useState<Meta>();
@@ -53,7 +54,7 @@ function App() {
   const request = useCallback(
     async <T,>(path: string): Promise<Envelope<T>> => {
       const response = await fetch(`${apiBase}/api/v1${path}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         cache: 'no-store',
       });
       const body = (await response.json()) as Envelope<T>;
@@ -65,7 +66,19 @@ function App() {
   );
 
   useEffect(() => {
-    if (!token) return;
+    let live = true;
+    fetch(`${apiBase}/api/v1/queues`, { cache: 'no-store' })
+      .then((response) => {
+        if (live && response.ok) setConnected(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!connected) return;
     let live = true;
     setLoading(true);
     request<Queue[]>('/queues')
@@ -89,10 +102,10 @@ function App() {
     return () => {
       live = false;
     };
-  }, [token, request, refreshKey]);
+  }, [connected, request, refreshKey]);
 
   useEffect(() => {
-    if (!token || !selected) return;
+    if (!connected || !selected) return;
     let live = true;
     setLoading(true);
     const params = new URLSearchParams({ state, limit: '25', offset: String(offset) });
@@ -121,13 +134,13 @@ function App() {
     return () => {
       live = false;
     };
-  }, [token, selected, state, name, offset, request, refreshKey]);
+  }, [connected, selected, state, name, offset, request, refreshKey]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!connected) return;
     const timer = window.setInterval(() => setRefreshKey((value) => value + 1), 10_000);
     return () => window.clearInterval(timer);
-  }, [token]);
+  }, [connected]);
 
   useEffect(() => {
     if (!detail) return;
@@ -176,11 +189,12 @@ function App() {
         </div>
         <div className="top-actions">
           <span className="readonly">● READ ONLY</span>
-          {token && (
+          {connected && (
             <button
               className="top-disconnect"
               onClick={() => {
                 setToken('');
+                setConnected(false);
                 setQueues([]);
                 setDetail(undefined);
               }}
@@ -190,7 +204,7 @@ function App() {
           )}
         </div>
       </header>
-      {!token ? (
+      {!connected ? (
         <main className="login">
           <div className="login-card">
             <div className="eyebrow">WELCOME TO QUEUELENS</div>
@@ -200,6 +214,7 @@ function App() {
               onSubmit={(event) => {
                 event.preventDefault();
                 setToken(draft);
+                setConnected(true);
                 setDraft('');
               }}
             >
@@ -241,6 +256,7 @@ function App() {
                 className="subtle"
                 onClick={() => {
                   setToken('');
+                  setConnected(false);
                   setQueues([]);
                   setDetail(undefined);
                 }}

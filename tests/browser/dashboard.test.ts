@@ -26,6 +26,13 @@ test('browser shows queues and sanitized job detail; token stays in request head
   await page.route('http://queuelens.test/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/api/v1/')) {
+      if (!route.request().headers().authorization) {
+        await route.fulfill({
+          status: 401,
+          json: { data: null, meta, error: { message: 'Access token required' } },
+        });
+        return;
+      }
       requested.push(route.request().headers().authorization ?? '');
       const data = url.pathname.endsWith('/jobs/failed-1')
         ? {
@@ -77,6 +84,13 @@ test('dashboard fits a mobile viewport', async ({ page }) => {
   await page.route('http://queuelens.test/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/api/v1/')) {
+      if (!route.request().headers().authorization) {
+        await route.fulfill({
+          status: 401,
+          json: { data: null, meta, error: { message: 'Access token required' } },
+        });
+        return;
+      }
       const data = url.pathname.endsWith('/jobs')
         ? { jobs: [], nextOffset: null }
         : [
@@ -102,4 +116,29 @@ test('dashboard fits a mobile viewport', async ({ page }) => {
   assert.equal(overflow, false);
   await page.getByRole('button', { name: 'Disconnect' }).first().click();
   await page.getByLabel('Access token').waitFor();
+});
+
+test('session-authorized embedded dashboard opens without a token prompt', async ({ page }) => {
+  await page.route('http://queuelens.test/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith('/monitor/api/v1/')) {
+      const data = url.pathname.endsWith('/jobs')
+        ? { jobs: [], nextOffset: null }
+        : [
+            {
+              name: 'email',
+              counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
+              paused: false,
+            },
+          ];
+      await route.fulfill({ json: { data, meta } });
+      return;
+    }
+    const path =
+      url.pathname === '/monitor/' ? 'index.html' : url.pathname.replace('/monitor/', '');
+    await route.fulfill({ path: resolve(dist, path) });
+  });
+  await page.goto('http://queuelens.test/monitor/');
+  await page.getByRole('heading', { name: 'Jobs' }).waitFor();
+  assert.equal(await page.getByLabel('Access token').count(), 0);
 });
