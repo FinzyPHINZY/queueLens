@@ -65,6 +65,10 @@ When Redis is unavailable, queue snapshots can remain visible with stale warning
 
 The benchmark prints JSON with throughput, process CPU and heap, Redis command counts, and monitored API p95 latency. It creates and removes its own queue. Run it on an otherwise idle development Redis instance for a useful comparison.
 
+### Benchmark snapshot
+
+On one [Ubuntu 24.04 CI run](https://github.com/FinzyPHINZY/queueLens/actions/runs/44917723096) with Node 22, BullMQ 5.81.5, Redis 8.2, and 200 jobs processed for 10 ms each, the baseline completed 91.3 jobs/s with 117 ms process CPU and 6,415 Redis commands. With the monitor reading every 100 ms and polling every second, it completed 93.3 jobs/s with 146 ms CPU and 6,455 Redis commands; API p95 was 1.8 ms. End-of-run heap was 16.2 MiB and 16.0 MiB respectively. This single short run is a reproducible starting point, not a statistically meaningful worker-impact estimate.
+
 ## License
 
 See [LICENSE](LICENSE). Local implementation checklists and product notes live under ignored `docs/` and are not committed.

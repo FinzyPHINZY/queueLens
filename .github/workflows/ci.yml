@@ -26,6 +26,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm check
+      - name: Build Docker image
+        run: docker build -t queuelens-preview .
+      - name: Smoke Docker image
+        run: |
+          docker run -d --name queuelens-preview --network host \
+            -e REDIS_URL=redis://127.0.0.1:6379 \
+            -e MONITOR_HOST=127.0.0.1 \
+            -e MONITOR_TOKEN=ci-only-token \
+            queuelens-preview
+          trap 'docker rm -f queuelens-preview' EXIT
+          curl --retry 20 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:3000/api/v1/health
+          curl -fsS -H 'Authorization: Bearer ci-only-token' http://127.0.0.1:3000/api/v1/queues | rg 'demo'
+          curl -fsS http://127.0.0.1:3000/ | rg 'assets'
       - name: Baseline benchmark
         run: pnpm benchmark
       - name: Install browser

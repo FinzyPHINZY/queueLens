@@ -13,5 +13,6 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsconfig.build.json eslint.config.mjs ./
 COPY packages ./packages
 COPY apps ./apps
+COPY scripts ./scripts
 RUN pnpm build
 CMD ["pnpm", "start"]
