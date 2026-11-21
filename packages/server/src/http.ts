@@ -211,6 +211,9 @@ export function createHttpHandler(config: HttpConfig) {
           if (await permitted(req, { queueName: name, permission: 'queue:read' }))
             allowed.push(name);
         }
+        if (names.length > 0 && allowed.length === 0) {
+          return error(res, 403, 'FORBIDDEN', 'Access denied');
+        }
         const results = await Promise.allSettled(allowed.map((name) => poller.get(name)));
         const snapshots: QueueSnapshot[] = [];
         const warnings: string[] = [];

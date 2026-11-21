@@ -99,6 +99,11 @@ test('authorization, page caps and exact job lookup are enforced', async () => {
   });
   const directory = await call(handler, '/api/v1/queues');
   assert.equal(directory.status, 200);
+  const deniedDirectory = createHttpHandler({
+    registry: new QueueRegistry([queue]),
+    authorize: async () => false,
+  });
+  assert.equal((await call(deniedDirectory, '/api/v1/queues', '')).status, 403);
   assert.equal((await call(handler, '/api/v1/queues/demo/jobs/one')).status, 403);
   const openHandler = createHttpHandler({ registry: new QueueRegistry([queue]), token: 'secret' });
   assert.equal((await call(openHandler, '/api/v1/queues/demo/jobs?limit=101')).status, 400);
