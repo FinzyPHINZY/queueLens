@@ -1,9 +1,6 @@
 import { createServer } from 'node:http';
-import { Queue } from 'bullmq';
-import { BullMqQueueAdapter } from '../../../packages/bullmq-adapter/src/adapter.js';
-import { redisOptions } from '../../../packages/bullmq-adapter/src/connection.js';
-import { QueueRegistry } from '../../../packages/core/src/monitor.js';
-import { createHttpHandler } from '../../../packages/server/src/http.js';
+import { resolve } from 'node:path';
+import { createStandaloneMonitor } from '../../../packages/monitor/src/index.js';
 
 const names = (process.env.MONITOR_QUEUES ?? 'demo')
   .split(',')
@@ -13,24 +10,56 @@ const token = process.env.MONITOR_TOKEN;
 const port = Number(process.env.MONITOR_PORT ?? 3000);
 const host = process.env.MONITOR_HOST ?? '127.0.0.1';
 const redisUrl = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
+const intervalMs = Number(process.env.MONITOR_POLL_INTERVAL_MS ?? 5_000);
+const maxConcurrentReads = Number(process.env.MONITOR_MAX_READS ?? 4);
+const queryTimeoutMs = Number(process.env.MONITOR_QUERY_TIMEOUT_MS ?? 2_000);
+const payloadAccess = process.env.MONITOR_PAYLOAD_ACCESS ?? 'deny';
+const showFailureDetails = process.env.MONITOR_SHOW_FAILURE_DETAILS === 'true';
+const allowedPaths = (process.env.MONITOR_ALLOWED_PATHS ?? '').split(',').filter(Boolean);
+const redactPaths = (process.env.MONITOR_REDACT_PATHS ?? '').split(',').filter(Boolean);
+const logLevel = process.env.MONITOR_LOG_LEVEL ?? 'info';
+const levels = ['silent', 'error', 'info', 'debug'] as const;
 
 if (!token || names.length === 0 || !Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error('Set MONITOR_TOKEN, at least one MONITOR_QUEUES name, and a valid MONITOR_PORT');
 }
+if (payloadAccess !== 'deny' && payloadAccess !== 'allow') {
+  throw new Error('MONITOR_PAYLOAD_ACCESS must be deny or allow');
+}
+if (!levels.includes(logLevel as (typeof levels)[number])) {
+  throw new Error('MONITOR_LOG_LEVEL must be silent, error, info, or debug');
+}
+function log(entry: {
+  level: 'debug' | 'error' | 'info';
+  event: string;
+  code?: string;
+  host?: string;
+  port?: number;
+  queues?: number;
+}) {
+  if (levels.indexOf(logLevel as (typeof levels)[number]) < levels.indexOf(entry.level)) return;
+  console.log(JSON.stringify({ time: new Date().toISOString(), ...entry }));
+}
 
-const queues = names.map(
-  (name) => new BullMqQueueAdapter(new Queue(name, { connection: redisOptions(redisUrl) }), true),
-);
-const registry = new QueueRegistry(queues);
-const server = createServer(createHttpHandler({ registry, token }));
+const monitor = createStandaloneMonitor({
+  redisUrl,
+  queueNames: names,
+  token,
+  dashboardDir: resolve('apps/dashboard/dist'),
+  polling: { intervalMs, maxConcurrentReads, queryTimeoutMs },
+  redaction: { payloadAccess, allowedPaths, redactPaths, showFailureDetails },
+  log,
+});
+const server = createServer(monitor.handler);
 
 server.listen(port, host, () => {
-  console.log(`Monitor listening at http://${host}:${port}`);
+  log({ level: 'info', event: 'monitor_started', host, port, queues: names.length });
 });
 
 async function shutdown() {
   server.close();
-  await registry.close();
+  await monitor.close();
+  log({ level: 'info', event: 'monitor_stopped' });
 }
 
 process.once('SIGINT', () => void shutdown());

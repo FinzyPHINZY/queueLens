@@ -19,11 +19,31 @@ export interface JobMetadata {
   timestamp: number;
   processedOn?: number;
   finishedOn?: number;
+  delay?: number;
+  priority?: number;
+  progress?: unknown;
+  repeatJobKey?: string;
+}
+
+export interface RawJob extends JobMetadata {
+  data: unknown;
+  returnValue: unknown;
+  failedReason?: string;
+  stacktrace: string[];
+}
+
+export interface JobPageQuery {
+  state: ObservedState;
+  offset: number;
+  limit: number;
 }
 
 export interface ReadOnlyQueue {
   readonly name: string;
   getCounts(): Promise<QueueCounts>;
+  isPaused(): Promise<boolean>;
+  listJobs(query: JobPageQuery): Promise<RawJob[]>;
+  getJob(id: string): Promise<RawJob | null>;
   getJobMetadata(id: string): Promise<JobMetadata | null>;
   close?(): Promise<void>;
 }
@@ -31,6 +51,7 @@ export interface ReadOnlyQueue {
 export interface QueueSnapshot {
   name: string;
   counts: QueueCounts;
+  paused?: boolean;
 }
 
 export interface ResponseMeta {
@@ -43,14 +64,23 @@ export interface ResponseMeta {
 
 export type MonitorErrorCode =
   | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
   | 'QUEUE_NOT_FOUND'
   | 'JOB_NOT_FOUND'
   | 'REDIS_UNAVAILABLE'
-  | 'INVALID_REQUEST';
+  | 'INVALID_REQUEST'
+  | 'INVALID_FILTER'
+  | 'RATE_LIMITED'
+  | 'INTERNAL_ERROR';
 
 export type ApiResponse<T> =
-  | { data: T; meta: ResponseMeta }
-  | { data: null; meta: ResponseMeta; error: { code: MonitorErrorCode; message: string } };
+  | { success: true; data: T; meta: ResponseMeta }
+  | {
+      success: false;
+      data: null;
+      meta: ResponseMeta;
+      error: { code: MonitorErrorCode; message: string };
+    };
 
 export function responseMeta(observedAt = new Date()): ResponseMeta {
   return {
@@ -84,7 +114,9 @@ export class QueueRegistry {
 
   async snapshot(name: string): Promise<QueueSnapshot | null> {
     const queue = this.get(name);
-    return queue ? { name, counts: await queue.getCounts() } : null;
+    if (!queue) return null;
+    const [counts, paused] = await Promise.all([queue.getCounts(), queue.isPaused()]);
+    return { name, counts, paused };
   }
 
   async close(): Promise<void> {

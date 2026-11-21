@@ -1,0 +1,156 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { test } from '@playwright/test';
+
+const dist = resolve('apps/dashboard/dist');
+const meta = {
+  observedAt: new Date().toISOString(),
+  source: 'bullmq',
+  freshnessMs: 0,
+  partial: false,
+  warnings: [],
+};
+const job = {
+  id: 'failed-1',
+  name: 'email',
+  state: 'failed',
+  attemptsMade: 2,
+  timestamp: Date.now(),
+};
+
+test('browser shows queues and sanitized job detail; token stays in request header', async ({
+  page,
+}) => {
+  const requested: string[] = [];
+  await page.route('http://queuelens.test/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith('/api/v1/')) {
+      if (!route.request().headers().authorization) {
+        await route.fulfill({
+          status: 401,
+          json: {
+            success: false,
+            data: null,
+            meta,
+            error: { code: 'UNAUTHORIZED', message: 'Access token required' },
+          },
+        });
+        return;
+      }
+      requested.push(route.request().headers().authorization ?? '');
+      const data = url.pathname.endsWith('/jobs/failed-1')
+        ? {
+            ...job,
+            payload: { visibility: 'hidden', reason: 'policy' },
+            returnValue: { visibility: 'hidden', reason: 'policy' },
+            failureReason: 'synthetic failure',
+            stacktrace: [],
+          }
+        : url.pathname.endsWith('/jobs')
+          ? { jobs: [job], nextOffset: null }
+          : [
+              {
+                name: 'email',
+                counts: { waiting: 1, active: 0, delayed: 0, completed: 0, failed: 1 },
+                paused: false,
+              },
+            ];
+      await route.fulfill({ json: { success: true, data, meta } });
+      return;
+    }
+    const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    assert.match(path, /^(index\.html|assets\/[\w.-]+)$/);
+    const contents = await readFile(resolve(dist, path));
+    await route.fulfill({
+      body: contents,
+      contentType: path.endsWith('.js')
+        ? 'text/javascript'
+        : path.endsWith('.css')
+          ? 'text/css'
+          : 'text/html',
+    });
+  });
+  await page.goto('http://queuelens.test/');
+  await page.getByLabel('Access token').fill('browser-token');
+  await page.getByRole('button', { name: 'Open monitor' }).click();
+  await page.getByRole('heading', { name: 'email', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Inspect' }).click();
+  await page.getByRole('heading', { name: 'Payload' }).waitFor();
+  await page.getByText('Hidden (policy) by monitor policy.').first().waitFor();
+  await page.screenshot({ path: 'test-results/dashboard-desktop.png', fullPage: true });
+  await page.keyboard.press('Escape');
+  await page.getByRole('heading', { name: 'Payload' }).waitFor({ state: 'detached' });
+  assert.ok(requested.length >= 3);
+  assert.ok(requested.every((header) => header === 'Bearer browser-token'));
+});
+
+test('dashboard fits a mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('http://queuelens.test/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith('/api/v1/')) {
+      if (!route.request().headers().authorization) {
+        await route.fulfill({
+          status: 401,
+          json: {
+            success: false,
+            data: null,
+            meta,
+            error: { code: 'UNAUTHORIZED', message: 'Access token required' },
+          },
+        });
+        return;
+      }
+      const data = url.pathname.endsWith('/jobs')
+        ? { jobs: [], nextOffset: null }
+        : [
+            {
+              name: 'email',
+              counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
+              paused: false,
+            },
+          ];
+      await route.fulfill({ json: { success: true, data, meta } });
+      return;
+    }
+    const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    await route.fulfill({ path: resolve(dist, path) });
+  });
+  await page.goto('http://queuelens.test/');
+  await page.getByLabel('Access token').fill('browser-token');
+  await page.getByRole('button', { name: 'Open monitor' }).click();
+  await page.getByRole('heading', { name: 'Jobs' }).waitFor();
+  await page.screenshot({ path: 'test-results/dashboard-mobile.png', fullPage: true });
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth,
+  );
+  assert.equal(overflow, false);
+  await page.getByRole('button', { name: 'Disconnect' }).first().click();
+  await page.getByLabel('Access token').waitFor();
+});
+
+test('session-authorized embedded dashboard opens without a token prompt', async ({ page }) => {
+  await page.route('http://queuelens.test/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith('/monitor/api/v1/')) {
+      const data = url.pathname.endsWith('/jobs')
+        ? { jobs: [], nextOffset: null }
+        : [
+            {
+              name: 'email',
+              counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 },
+              paused: false,
+            },
+          ];
+      await route.fulfill({ json: { success: true, data, meta } });
+      return;
+    }
+    const path =
+      url.pathname === '/monitor/' ? 'index.html' : url.pathname.replace('/monitor/', '');
+    await route.fulfill({ path: resolve(dist, path) });
+  });
+  await page.goto('http://queuelens.test/monitor/');
+  await page.getByRole('heading', { name: 'Jobs' }).waitFor();
+  assert.equal(await page.getByLabel('Access token').count(), 0);
+});

@@ -8,10 +8,12 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
     "types": ["node"],
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts"],
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

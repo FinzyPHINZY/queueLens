@@ -17,6 +17,15 @@ const queue: ReadOnlyQueue = {
       'waiting-children': 0,
     };
   },
+  async isPaused() {
+    return false;
+  },
+  async listJobs() {
+    return [];
+  },
+  async getJob() {
+    return null;
+  },
   async getJobMetadata(id) {
     return id === 'known'
       ? { id, name: 'sample', state: 'waiting', attemptsMade: 0, timestamp: 1 }
@@ -47,13 +56,18 @@ async function request(method: string, url: string, authorization?: string) {
 test('queue data requires a bearer token', async () => {
   const denied = await request('GET', '/api/v1/queues');
   assert.equal(denied.status, 401);
+  assert.equal(denied.body.success, false);
   assert.equal(denied.body.error.code, 'UNAUTHORIZED');
+  assert.equal(denied.body.data, null);
 
   const wrong = await request('GET', '/api/v1/queues', 'Bearer wrong');
   assert.equal(wrong.status, 401);
 
   const allowed = await request('GET', '/api/v1/queues', 'Bearer secret');
   assert.equal(allowed.status, 200);
+  assert.equal(allowed.body.success, true);
+  assert.equal('message' in allowed.body, false);
+  assert.equal('error' in allowed.body, false);
   assert.equal(allowed.body.data[0].name, 'demo');
   assert.equal(allowed.body.meta.source, 'bullmq');
   assert.equal(typeof allowed.body.meta.observedAt, 'string');
@@ -62,10 +76,13 @@ test('queue data requires a bearer token', async () => {
 test('unknown jobs use a stable error and mutations are rejected', async () => {
   const missing = await request('GET', '/api/v1/queues/demo/jobs/missing', 'Bearer secret');
   assert.equal(missing.status, 404);
+  assert.equal(missing.body.success, false);
+  assert.equal(typeof missing.body.error.message, 'string');
   assert.equal(missing.body.error.code, 'JOB_NOT_FOUND');
 
   const mutation = await request('POST', '/api/v1/queues/demo/jobs/known', 'Bearer secret');
   assert.equal(mutation.status, 405);
+  assert.equal(mutation.body.success, false);
 
   const malformed = await request('GET', '/api/v1/queues/%ZZ', 'Bearer secret');
   assert.equal(malformed.status, 400);
