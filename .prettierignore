@@ -1,0 +1,7 @@
+node_modules
+dist
+pnpm-lock.yaml
+PRODUCT.md
+AGENTS.md
+BUILD_PLAN.md
+LICENSE

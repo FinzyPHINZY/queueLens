@@ -1,0 +1,43 @@
+{
+  "name": "queuelens",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.20.0",
+  "pnpm": {
+    "overrides": {
+      "ignore": "7.0.6"
+    }
+  },
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "dev": "tsx watch apps/standalone/src/main.ts",
+    "start": "node dist/apps/standalone/src/main.js",
+    "example:seed": "tsx apps/example-bullmq/src/seed.ts",
+    "example:worker": "tsx apps/example-bullmq/src/worker.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm test:unit && pnpm test:integration",
+    "test:unit": "node --import tsx tests/unit/http.test.ts && node --import tsx tests/unit/adapter.test.ts",
+    "test:integration": "node --import tsx tests/integration/bullmq.test.ts",
+    "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
+  },
+  "dependencies": {
+    "bullmq": "5.81.5",
+    "ioredis": "5.11.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "22.19.17",
+    "eslint": "9.39.5",
+    "prettier": "3.6.2",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.53.1"
+  }
+}
