@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Stage 4 audited management
+
+- Add an explicitly enabled admin namespace with separate authorization, queue scope, CSRF protection for embedded sessions, and a read-only default.
+- Add state-checked single actions, previewed bulk retry and clean, advisory cancellation flags, per-item results, and confirmation UI.
+- Add append-only audit events, AOF-backed intent/result recording, idempotency, rate limits, and queue locks.
+
 ## Unreleased — Stage 3 history and alerts
 
 - Add opt-in, bounded Redis aggregate history with explicit missing-period gaps and dashboard trends.

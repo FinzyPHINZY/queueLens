@@ -352,3 +352,84 @@ test('history shows sampling gaps and alerts show incident delivery', async ({ p
   await page.getByText('email-backlog:1:opening').waitFor();
   await page.screenshot({ path: 'test-results/dashboard-alerts.png', fullPage: true });
 });
+
+test('management requires admin token and explicit confirmation', async ({ page }) => {
+  let mutations = 0;
+  await page.route('http://queuelens.test/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith('/api/v1/admin/')) {
+      if (route.request().headers().authorization !== 'Bearer admin-token') {
+        await route.fulfill({
+          status: 403,
+          json: {
+            success: false,
+            data: null,
+            meta,
+            error: { code: 'FORBIDDEN', message: 'Access denied' },
+          },
+        });
+        return;
+      }
+      const data = url.pathname.endsWith('/capabilities')
+        ? { enabled: true, queues: [{ name: 'email', actions: ['retry', 'pause'] }] }
+        : url.pathname.endsWith('/audit')
+          ? []
+          : { operationId: 'operation-1', action: 'retry', queue: 'email', status: 'succeeded' };
+      if (route.request().method() === 'POST') {
+        assert.ok(route.request().headers()['idempotency-key']);
+        mutations++;
+      }
+      await route.fulfill({ json: { success: true, data, meta } });
+      return;
+    }
+    if (url.pathname.startsWith('/api/v1/')) {
+      if (!route.request().headers().authorization) {
+        await route.fulfill({
+          status: 401,
+          json: {
+            success: false,
+            data: null,
+            meta,
+            error: { code: 'UNAUTHORIZED', message: 'Access token required' },
+          },
+        });
+        return;
+      }
+      const data = url.pathname.endsWith('/workers')
+        ? { workers: [], uninstrumentedLiveness: 'unknown' }
+        : url.pathname.endsWith('/diagnostics')
+          ? diagnostics
+          : url.pathname.endsWith('/schedulers')
+            ? []
+            : url.pathname.endsWith('/jobs')
+              ? { jobs: [], nextOffset: null }
+              : [
+                  {
+                    name: 'email',
+                    counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 1 },
+                    paused: false,
+                  },
+                ];
+      await route.fulfill({ json: { success: true, data, meta } });
+      return;
+    }
+    const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    await route.fulfill({ path: resolve(dist, path) });
+  });
+  await page.goto('http://queuelens.test/');
+  await page.getByLabel('Access token').fill('read-token');
+  await page.getByRole('button', { name: 'Open monitor' }).click();
+  await page.getByRole('button', { name: /Manage/ }).click();
+  await page.getByText('Enter an authorized admin token').waitFor();
+  assert.equal(mutations, 0);
+  await page.getByLabel('Admin token').fill('admin-token');
+  await page.getByRole('button', { name: 'Unlock management' }).click();
+  await page.getByRole('heading', { name: 'Action' }).waitFor();
+  await page.getByLabel('Job ID').fill('failed-1');
+  await page.getByRole('button', { name: 'Review action' }).click();
+  assert.equal(mutations, 0);
+  await page.getByRole('button', { name: 'Confirm retry' }).click();
+  await page.getByText('succeeded: retry', { exact: false }).waitFor();
+  assert.equal(mutations, 1);
+  await page.screenshot({ path: 'test-results/dashboard-management.png', fullPage: true });
+});
