@@ -29,7 +29,7 @@ test('standalone serves a real queue and dashboard with protected job data', asy
     if (!address || typeof address === 'string') throw new Error('Missing test address');
     const base = `http://127.0.0.1:${address.port}`;
     const html = await (await fetch(base)).text();
-    assert.match(html, /QueueLens/);
+    assert.match(html, /QueueHarbor/);
     const asset = html.match(/\.\/assets\/[^"']+\.js/)?.[0];
     assert.ok(asset);
     assert.equal((await fetch(new URL(asset, `${base}/`))).status, 200);

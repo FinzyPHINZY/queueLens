@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import process from 'node:process';
 
 const root = resolve(import.meta.dirname, '..');
-const temporary = await mkdtemp(join(tmpdir(), 'queuelens-package-'));
+const temporary = await mkdtemp(join(tmpdir(), 'queueharbor-package-'));
 const tarball = join(temporary, 'monitor.tgz');
 const run = (command, args, cwd = temporary) =>
   execFileSync(command, args, {
@@ -19,7 +19,7 @@ try {
   run('pnpm', ['--dir', join(root, 'packages/monitor'), 'pack', '--out', tarball], root);
   await writeFile(
     join(temporary, 'package.json'),
-    JSON.stringify({ name: 'queuelens-external-consumer', private: true, type: 'module' }),
+    JSON.stringify({ name: 'queueharbor-external-consumer', private: true, type: 'module' }),
   );
   run('npm', [
     'install',
@@ -35,7 +35,7 @@ try {
   await writeFile(
     join(temporary, 'smoke.mjs'),
     `import assert from 'node:assert/strict';
-import { createMonitor, createExpressMonitor, instrumentWorker, createCancellationProbe } from '@queuelens/monitor';
+import { createMonitor, createExpressMonitor, instrumentWorker, createCancellationProbe } from '@queueharbor/monitor';
 assert.equal(typeof createMonitor, 'function');
 assert.equal(typeof createExpressMonitor, 'function');
 assert.equal(typeof instrumentWorker, 'function');
@@ -44,7 +44,7 @@ assert.equal(typeof createCancellationProbe, 'function');
   );
   await writeFile(
     join(temporary, 'consumer.ts'),
-    `import { createMonitor, type MonitorOptions, type ManagementOptions } from '@queuelens/monitor';
+    `import { createMonitor, type MonitorOptions, type ManagementOptions } from '@queueharbor/monitor';
 import { Queue } from 'bullmq';
 const options: MonitorOptions = { queues: [] as Queue[], token: 'example-token' };
 const management: ManagementOptions | undefined = undefined;

@@ -1,5 +1,5 @@
 {
-  "name": "@queuelens/server",
+  "name": "@queueharbor/server",
   "version": "0.0.0",
   "private": true,
   "type": "module"

@@ -58,7 +58,9 @@ export function AdminView({ base, defaultQueue }: { base: string; defaultQueue: 
     body?: object,
     idempotencyKey?: string,
   ): Promise<T> {
-    const csrf = document.querySelector<HTMLMetaElement>('meta[name="queuelens-csrf"]')?.content;
+    const csrf =
+      document.querySelector<HTMLMetaElement>('meta[name="queueharbor-csrf"]')?.content ??
+      document.querySelector<HTMLMetaElement>('meta[name="queuelens-csrf"]')?.content;
     const response = await fetch(`${base}/api/v1/admin${path}`, {
       method,
       credentials: 'same-origin',
@@ -66,7 +68,7 @@ export function AdminView({ base, defaultQueue }: { base: string; defaultQueue: 
       headers: {
         ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
         ...(body ? { 'Content-Type': 'application/json' } : {}),
-        ...(csrf ? { 'X-Queuelens-CSRF': csrf } : {}),
+        ...(csrf ? { 'X-QueueHarbor-CSRF': csrf, 'X-Queuelens-CSRF': csrf } : {}),
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,

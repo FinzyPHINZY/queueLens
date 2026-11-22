@@ -23,7 +23,7 @@ const counts = {
 };
 
 test('history uses owned Redis keys, bounds samples, marks gaps, and omits unexpected payload fields', async () => {
-  const prefix = `queuelens:test:${process.pid}:${Date.now()}`;
+  const prefix = `queueharbor:test:${process.pid}:${Date.now()}`;
   const store = new RedisHistoryStore({
     redisUrl: url,
     keyPrefix: prefix,
@@ -65,7 +65,7 @@ test('history uses owned Redis keys, bounds samples, marks gaps, and omits unexp
 });
 
 test('incident and notification state persists across monitor instances', async () => {
-  const prefix = `queuelens:test:restart:${process.pid}:${Date.now()}`;
+  const prefix = `queueharbor:test:restart:${process.pid}:${Date.now()}`;
   const first = new RedisHistoryStore({
     redisUrl: url,
     keyPrefix: prefix,
@@ -124,7 +124,7 @@ test('incident and notification state persists across monitor instances', async 
 });
 
 test('sustained incident sends one opening webhook and one recovery after restart', async () => {
-  const prefix = `queuelens:test:delivery:${process.pid}:${Date.now()}`;
+  const prefix = `queueharbor:test:delivery:${process.pid}:${Date.now()}`;
   const store = new RedisHistoryStore({
     redisUrl: url,
     keyPrefix: prefix,

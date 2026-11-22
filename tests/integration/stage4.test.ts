@@ -9,8 +9,8 @@ import { ManagementService, ManagementError } from '../../packages/monitor/src/m
 const redisUrl = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379';
 
 test('real BullMQ management checks state and writes payload-free audit events', async () => {
-  const name = `queuelens-admin-${process.pid}-${Date.now()}`;
-  const prefix = `queuelens:admin:test:${process.pid}:${Date.now()}`;
+  const name = `queueharbor-admin-${process.pid}-${Date.now()}`;
+  const prefix = `queueharbor:admin:test:${process.pid}:${Date.now()}`;
   const connection = redisOptions(redisUrl);
   const queue = new Queue(name, { connection });
   const redis = new Redis(redisUrl);

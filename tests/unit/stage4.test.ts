@@ -394,7 +394,7 @@ test('cookie-authenticated management rejects cross-origin and missing CSRF proo
     const request = Object.assign(Readable.from([]), {
       method: 'GET',
       url: '/api/v1/admin/capabilities',
-      headers: { host: 'queuelens.test' },
+      headers: { host: 'queueharbor.test' },
     }) as unknown as IncomingMessage;
     const response = Object.assign(new EventEmitter(), {
       writeHead(code: number) {
@@ -414,7 +414,7 @@ test('cookie-authenticated management rejects cross-origin and missing CSRF proo
       method: 'POST',
       url: '/api/v1/admin/queues/demo/actions/retry',
       headers: {
-        host: 'queuelens.test',
+        host: 'queueharbor.test',
         origin,
         'x-csrf-token': csrf,
         'content-type': 'application/json',
@@ -434,8 +434,8 @@ test('cookie-authenticated management rejects cross-origin and missing CSRF proo
     return status;
   };
   assert.equal(await call('https://evil.example', 'valid'), 403);
-  assert.equal(await call('http://queuelens.test', 'wrong'), 403);
+  assert.equal(await call('http://queueharbor.test', 'wrong'), 403);
   assert.equal(fake.retries, 0);
-  assert.equal(await call('http://queuelens.test', 'valid'), 200);
+  assert.equal(await call('http://queueharbor.test', 'valid'), 200);
   assert.equal(fake.retries, 1);
 });

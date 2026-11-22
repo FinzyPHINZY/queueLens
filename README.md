@@ -1,10 +1,10 @@
-# QueueLens
+# QueueHarbor
 
-QueueLens is a self-hosted BullMQ monitor with a read-only default. Stage 4 adds an explicitly enabled, audited management mode. **QueueLens is a working name.** The npm scope and public release are still being verified.
+QueueHarbor is a self-hosted BullMQ monitor with a read-only default and an explicitly enabled, audited management mode. The installable package is prepared as `@queueharbor/monitor`; public publication remains pending ownership of the `@queueharbor` npm scope and release approval.
 
 ## Requirements
 
-The preview is built and checked with Node.js 22, pnpm 10.20.0, BullMQ 5.81.5, and Redis 8.2. Broader versions have not been tested. Ordinary monitor routes use read-only BullMQ APIs; mutations require the separately enabled admin mode. QueueLens never closes queues supplied by an embedding application.
+The preview is built and checked with Node.js 22, pnpm 10.20.0, BullMQ 5.81.5, and Redis 8.2. Broader versions have not been tested. Ordinary monitor routes use read-only BullMQ APIs; mutations require the separately enabled admin mode. QueueHarbor never closes queues supplied by an embedding application.
 
 ## Run the demo
 
@@ -31,29 +31,29 @@ Alerts are opt-in. Set `MONITOR_ALERT_RULES_JSON` to an array of rules and `MONI
 
 ```bash
 export MONITOR_HISTORY_REDIS_URL=redis://127.0.0.1:6379
-export MONITOR_ALERT_WEBHOOK_URL=https://alerts.example.com/queuelens
+export MONITOR_ALERT_WEBHOOK_URL=https://alerts.example.com/queueharbor
 export MONITOR_ALERT_RULES_JSON='[{"id":"demo-backlog","queue":"demo","metric":"backlog","threshold":10,"sustainMs":120000,"cooldownMs":300000,"channel":"webhook","enabled":true}]'
 ```
 
 Metrics are `failed_count` (retained failed jobs), `failure_rate` (sampled failures per minute over five minutes), `backlog` (waiting, delayed, and waiting-children), `waiting_age` (oldest waiting job in milliseconds), and `heartbeat_gap` (milliseconds since an identified instrumented worker last reported). A heartbeat rule also needs `workerId`. Each threshold is inclusive. A sustained window requires consecutive samples; gaps reset it. One opening and one recovery event are recorded per incident. Cooldown suppresses reopening after recovery. No rule is created for zero activity by default. Rule changes require a monitor restart; the dashboard displays server rules but cannot edit them.
 
-Webhook delivery uses HTTPS (local HTTP is allowed), a five-second timeout, up to five attempts, and a stable `x-queuelens-event-id` for receiver deduplication. Delivery is at least once: a crash after remote acceptance can resend the same ID. Failures and attempts appear in the Alerts view. Embedded applications can use `createEmailSink(recipient, sendMail)` with their own SMTP or provider transport and pass it through `notificationSinks`; no email credentials are stored by QueueLens. Both adapters send aggregate alert fields only. Alert evaluation and delivery use the monitor process, separate from BullMQ worker processing.
+Webhook delivery uses HTTPS (local HTTP is allowed), a five-second timeout, up to five attempts, and a stable `x-queuelens-event-id` for receiver deduplication. Delivery is at least once: a crash after remote acceptance can resend the same ID. Failures and attempts appear in the Alerts view. Embedded applications can use `createEmailSink(recipient, sendMail)` with their own SMTP or provider transport and pass it through `notificationSinks`; no email credentials are stored by QueueHarbor. Both adapters send aggregate alert fields only. Alert evaluation and delivery use the monitor process, separate from BullMQ worker processing.
 
 Protected endpoints include `GET /api/v1/queues/:name/history?range=1h|6h|24h`, `GET /api/v1/alerts/rules`, `/incidents`, `/notifications`, and `GET /api/v1/metrics` in Prometheus text format. Queue authorization applies to history, alerts, and metrics. Metrics expose only configured queue and state labels, capped at 100 queues, plus scrape partial and observation age gauges.
 
 ## Explicit management mode
 
-Management remains disabled unless `MONITOR_MANAGEMENT_ENABLED=true`. Standalone mode also requires `MONITOR_ADMIN_TOKEN` (a distinct random value of at least 32 characters), `MONITOR_ADMIN_ACTOR_ID`, `MONITOR_ADMIN_QUEUES` (comma-separated authorized queue names), and `MONITOR_AUDIT_REDIS_URL`. The audit Redis must have AOF enabled; QueueLens waits for an AOF fsync before accepting an action and fails closed if audit storage is unavailable. Use a persistent Redis volume and backups. Audit events are append-only and are never automatically trimmed. The configured actor ID identifies the admin token, so use separate deployments or an embedded identity callback when individual attribution matters.
+Management remains disabled unless `MONITOR_MANAGEMENT_ENABLED=true`. Standalone mode also requires `MONITOR_ADMIN_TOKEN` (a distinct random value of at least 32 characters), `MONITOR_ADMIN_ACTOR_ID`, `MONITOR_ADMIN_QUEUES` (comma-separated authorized queue names), and `MONITOR_AUDIT_REDIS_URL`. The audit Redis must have AOF enabled; QueueHarbor waits for an AOF fsync before accepting an action and fails closed if audit storage is unavailable. Use a persistent Redis volume and backups. Audit events are append-only and are never automatically trimmed. The configured actor ID identifies the admin token, so use separate deployments or an embedded identity callback when individual attribution matters.
 
 The admin API is separate from ordinary read routes. `POST /api/v1/admin/queues/:name/actions/:action` accepts `retry`, `pause`, `resume`, `promote`, `remove`, `bulk-retry`, `clean`, or `cancel-request`. Send JSON and an `Idempotency-Key` header containing 8–128 URL-safe characters. A read token never grants these actions. `GET /api/v1/admin/capabilities` reports authorized actions; `GET /api/v1/admin/audit` lists recent audit events for authorized queues. Both require admin authorization. A result can be `succeeded` or `partial`; partial bulk results report each job. A 503 `MANAGEMENT_OUTCOME_UNCERTAIN` means the action may have happened but its result could not be durably recorded. Inspect audit and queue state before retrying with a new key.
 
 Bulk retry and clean require `POST /api/v1/admin/queues/:name/preview/:action` first. The preview returns exact job IDs, eligibility, and a five-minute token; send those IDs and the token in the action request. Bulk actions cap at 25 jobs and re-check each job before acting. Clean accepts only old completed or failed jobs (`state`, `olderThanMs`, `limit` in the preview). Remove rejects active jobs, flow-dependent jobs, and jobs with repeat metadata. Retry accepts failed jobs; promote accepts delayed jobs. Queue pause is global and lets active handlers finish. The browser Manage view presents these limits and requires confirmation.
 
-`cancel-request` records an advisory flag for an active job for one hour. A processor must opt in and check it with `createCancellationProbe({ redisUrl: process.env.MONITOR_AUDIT_REDIS_URL! })`; it decides when it can stop safely. QueueLens does not interrupt a running handler. Embedded management uses `management: { enabled: true, auditRedisUrl, authorizeAction, verifyCsrf }` with a per-action, per-queue actor callback. Cookie-authenticated requests require a same-origin `Origin` and a host-provided CSRF verifier. For TLS proxies, forward the trusted protocol as `X-Forwarded-Proto`; never trust this header from untrusted clients.
+`cancel-request` records an advisory flag for an active job for one hour. A processor must opt in and check it with `createCancellationProbe({ redisUrl: process.env.MONITOR_AUDIT_REDIS_URL! })`; it decides when it can stop safely. QueueHarbor does not interrupt a running handler. Embedded management uses `management: { enabled: true, auditRedisUrl, authorizeAction, verifyCsrf }` with a per-action, per-queue actor callback. Cookie-authenticated requests require a same-origin `Origin` and a host-provided CSRF verifier. For the Manage view, provide a `queueharbor-csrf` meta tag and verify the `X-QueueHarbor-CSRF` header; legacy `queuelens-csrf` integrations continue to work. For TLS proxies, forward the trusted protocol as `X-Forwarded-Proto`; never trust this header from untrusted clients.
 
 ## Embed in an application
 
-`pnpm build` prepares a typed, locally installable tarball with `pnpm --dir packages/monitor pack`. Public npm publication is pending scope verification. The package exposes `createMonitor` and `createExpressMonitor` with the same handler. Existing BullMQ queue objects remain owned by the host application.
+`pnpm build` prepares a typed, locally installable tarball with `pnpm --dir packages/monitor pack`. The package exposes `createMonitor` and `createExpressMonitor` with the same handler. Existing BullMQ queue objects remain owned by the host application.
 
 `pnpm test:package` builds the tarball, installs it in a temporary project outside this workspace, and checks its ESM runtime and TypeScript declarations. The current package supports ESM consumers; CommonJS `require()` is not a declared entry point. The package remains private until its public name, scope, and release are approved.
 
@@ -66,10 +66,12 @@ Bulk retry and clean require `POST /api/v1/admin/queues/:name/preview/:action` f
 
 For an upgrade, save the current image or tarball, environment settings, and Redis backup first. If management is enabled, retain its AOF-backed audit Redis and `queuelens:admin:v1:` keys. Stop the monitor, deploy the new version, then check authenticated `/api/v1/ready`, queue counts, and the dashboard before resuming normal operations. Workers can continue processing during a monitor-only replacement. For rollback, redeploy the saved version with its prior settings and check readiness again. Do not delete audit or history keys during rollback; review release notes for any future data-format migration before using this procedure.
 
+The QueueHarbor name does not change existing Redis key prefixes (`queuelens:`), Prometheus metric names (`queuelens_`), or the `x-queuelens-event-id` webhook header. These identifiers remain stable so existing deployments, dashboards, and webhook consumers continue to work.
+
 ```ts
 import express from 'express';
 import { Queue } from 'bullmq';
-import { createExpressMonitor } from '@queuelens/monitor';
+import { createExpressMonitor } from '@queueharbor/monitor';
 
 const app = express();
 const queue = new Queue('email', { connection: { host: '127.0.0.1' } });
@@ -85,10 +87,10 @@ You can also supply an async `authorize(request, target)` callback backed by you
 
 ## Optional worker instrumentation
 
-Call `instrumentWorker` beside an existing BullMQ worker to publish payload-free heartbeats to QueueLens-owned Redis keys. It uses the worker's public Redis client and never changes BullMQ job state. Close telemetry before closing the worker.
+Call `instrumentWorker` beside an existing BullMQ worker to publish payload-free heartbeats to QueueHarbor-owned Redis keys. It uses the worker's public Redis client and never changes BullMQ job state. Close telemetry before closing the worker.
 
 ```ts
-import { instrumentWorker } from '@queuelens/monitor';
+import { instrumentWorker } from '@queueharbor/monitor';
 
 const telemetry = instrumentWorker(worker, {
   id: 'email-worker-1',
@@ -131,7 +133,7 @@ The benchmark prints JSON with throughput, process CPU and heap, Redis command c
 
 ### Benchmark snapshot
 
-On one [Ubuntu 24.04 CI run](https://github.com/FinzyPHINZY/queueLens/actions/runs/44917723096) with Node 22, BullMQ 5.81.5, Redis 8.2, and 200 jobs processed for 10 ms each, the baseline completed 91.3 jobs/s with 117 ms process CPU and 6,415 Redis commands. With the monitor reading every 100 ms and polling every second, it completed 93.3 jobs/s with 146 ms CPU and 6,455 Redis commands; API p95 was 1.8 ms. End-of-run heap was 16.2 MiB and 16.0 MiB respectively. This single short run is a reproducible starting point, not a statistically meaningful worker-impact estimate.
+On one [Ubuntu 24.04 CI run](https://github.com/FinzyPHINZY/queueharbor/actions/runs/44917723096) with Node 22, BullMQ 5.81.5, Redis 8.2, and 200 jobs processed for 10 ms each, the baseline completed 91.3 jobs/s with 117 ms process CPU and 6,415 Redis commands. With the monitor reading every 100 ms and polling every second, it completed 93.3 jobs/s with 146 ms CPU and 6,455 Redis commands; API p95 was 1.8 ms. End-of-run heap was 16.2 MiB and 16.0 MiB respectively. This single short run is a reproducible starting point, not a statistically meaningful worker-impact estimate.
 
 ## License
 

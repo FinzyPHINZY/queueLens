@@ -1,5 +1,5 @@
 {
-  "name": "@queuelens/monitor",
+  "name": "@queueharbor/monitor",
   "version": "0.1.0",
   "private": true,
   "type": "module",
