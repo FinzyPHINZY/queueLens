@@ -106,7 +106,7 @@ pnpm benchmark # isolated 200-job baseline and monitored runs; requires Redis
 
 When Redis is unavailable, queue snapshots can remain visible with stale warnings; job reads return `REDIS_UNAVAILABLE`. Read saturation returns `RATE_LIMITED`. Check `/api/v1/ready` with authorization and the monitor's structured startup log. Do not put Redis passwords or access tokens in issue reports.
 
-The benchmark prints JSON with throughput, process CPU and heap, Redis command counts, and monitored API p95 latency for baseline, monitor, diagnostics, and opt-in history runs. It creates and removes its own queue and history keys. Run it on an otherwise idle development Redis instance for a useful comparison.
+The benchmark prints JSON with throughput, process CPU and heap, Redis command counts, and monitored API p95 latency for baseline, monitor, opt-in history, and diagnostics runs. It creates and removes its own queue and history keys. Run it on an otherwise idle development Redis instance for a useful comparison.
 
 ### Benchmark snapshot
 

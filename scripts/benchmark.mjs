@@ -125,8 +125,8 @@ try {
   await worker.waitUntilReady();
   globalThis.console.log(JSON.stringify(await run('baseline', false)));
   globalThis.console.log(JSON.stringify(await run('monitor', true)));
-  globalThis.console.log(JSON.stringify(await run('monitor+diagnostics', true, true)));
   globalThis.console.log(JSON.stringify(await run('monitor+history', true, false, true)));
+  globalThis.console.log(JSON.stringify(await run('monitor+diagnostics', true, true)));
 } finally {
   const keys = await redis.keys(`queuelens:benchmark:${process.pid}:*`);
   if (keys.length) await redis.del(...keys);
