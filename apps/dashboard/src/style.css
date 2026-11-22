@@ -696,7 +696,15 @@ a:focus-visible {
   }
   .topbar {
     height: 62px;
-    padding: 0 16px;
+    padding: 0 12px;
+  }
+  .topbar .mark,
+  .topbar .brand small,
+  .topbar .readonly {
+    display: none;
+  }
+  .top-actions {
+    gap: 8px;
   }
   .workspace {
     display: block;
