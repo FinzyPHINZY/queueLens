@@ -4,7 +4,7 @@ QueueLens is a self-hosted BullMQ monitor with a read-only default. Stage 4 adds
 
 ## Requirements
 
-The preview is built and checked with Node.js 22, pnpm 10.20.0, BullMQ 5.81.5, and Redis 8.2. Broader versions have not been tested. The monitor never calls BullMQ mutation methods and never closes queues supplied by an embedding application.
+The preview is built and checked with Node.js 22, pnpm 10.20.0, BullMQ 5.81.5, and Redis 8.2. Broader versions have not been tested. Ordinary monitor routes use read-only BullMQ APIs; mutations require the separately enabled admin mode. QueueLens never closes queues supplied by an embedding application.
 
 ## Run the demo
 
@@ -54,6 +54,17 @@ Bulk retry and clean require `POST /api/v1/admin/queues/:name/preview/:action` f
 ## Embed in an application
 
 `pnpm build` prepares a typed, locally installable tarball with `pnpm --dir packages/monitor pack`. Public npm publication is pending scope verification. The package exposes `createMonitor` and `createExpressMonitor` with the same handler. Existing BullMQ queue objects remain owned by the host application.
+
+`pnpm test:package` builds the tarball, installs it in a temporary project outside this workspace, and checks its ESM runtime and TypeScript declarations. The current package supports ESM consumers; CommonJS `require()` is not a declared entry point. The package remains private until its public name, scope, and release are approved.
+
+| Component      | Declared range or mode | Tested in CI                                   |
+| -------------- | ---------------------- | ---------------------------------------------- |
+| Node.js        | `>=22 <23`             | Node 22 on Ubuntu 24.04                        |
+| BullMQ peer    | `^5.81.5`              | `5.81.5`                                       |
+| Redis          | No wider range claimed | `8.2-alpine`                                   |
+| Package format | ESM                    | External tarball import and TypeScript compile |
+
+For an upgrade, save the current image or tarball, environment settings, and Redis backup first. If management is enabled, retain its AOF-backed audit Redis and `queuelens:admin:v1:` keys. Stop the monitor, deploy the new version, then check authenticated `/api/v1/ready`, queue counts, and the dashboard before resuming normal operations. Workers can continue processing during a monitor-only replacement. For rollback, redeploy the saved version with its prior settings and check readiness again. Do not delete audit or history keys during rollback; review release notes for any future data-format migration before using this procedure.
 
 ```ts
 import express from 'express';

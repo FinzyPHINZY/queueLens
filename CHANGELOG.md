@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased — Stage 4 audited management
+## Unreleased — Stage 5 release readiness
+
+- Add an external tarball install and TypeScript consumer check to CI.
+- Document the tested compatibility set and monitor upgrade and rollback steps.
+
+## Stage 4 — audited management
 
 - Add an explicitly enabled admin namespace with separate authorization, queue scope, CSRF protection for embedded sessions, and a read-only default.
 - Add state-checked single actions, previewed bulk retry and clean, advisory cancellation flags, per-item results, and confirmation UI.
