@@ -5,6 +5,7 @@
 - Add an external tarball install and TypeScript consumer check to CI.
 - Document the tested compatibility set and monitor upgrade and rollback steps.
 - Adopt QueueHarbor as the project name and prepare the `@queueharbor/monitor` package name while preserving existing data and API identifiers.
+- Prepare the `0.1.0` public package metadata and include its README and MIT license in the tarball; publication remains pending scope ownership and approval.
 
 ## Stage 4 — audited management
 

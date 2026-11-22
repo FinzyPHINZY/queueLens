@@ -2,6 +2,8 @@ node_modules/
 dist/
 /apps/dashboard/dist/
 /packages/monitor/dist/
+/packages/monitor/README.md
+/packages/monitor/LICENSE
 /test-results/
 /playwright-report/
 .env
