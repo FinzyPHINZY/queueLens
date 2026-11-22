@@ -25,6 +25,14 @@ const historyRedisUrl = process.env.MONITOR_HISTORY_REDIS_URL;
 const alertRules = JSON.parse(process.env.MONITOR_ALERT_RULES_JSON ?? '[]') as AlertRule[];
 if (!Array.isArray(alertRules)) throw new Error('MONITOR_ALERT_RULES_JSON must be an array');
 const webhookUrl = process.env.MONITOR_ALERT_WEBHOOK_URL;
+const managementEnabled = process.env.MONITOR_MANAGEMENT_ENABLED === 'true';
+const adminToken = process.env.MONITOR_ADMIN_TOKEN;
+const adminActorId = process.env.MONITOR_ADMIN_ACTOR_ID;
+const auditRedisUrl = process.env.MONITOR_AUDIT_REDIS_URL;
+const adminQueues = (process.env.MONITOR_ADMIN_QUEUES ?? '')
+  .split(',')
+  .map((name) => name.trim())
+  .filter(Boolean);
 
 if (!token || names.length === 0 || !Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error('Set MONITOR_TOKEN, at least one MONITOR_QUEUES name, and a valid MONITOR_PORT');
@@ -35,6 +43,10 @@ if (payloadAccess !== 'deny' && payloadAccess !== 'allow') {
 if (!levels.includes(logLevel as (typeof levels)[number])) {
   throw new Error('MONITOR_LOG_LEVEL must be silent, error, info, or debug');
 }
+if (managementEnabled && (!adminToken || !adminActorId || !auditRedisUrl || !adminQueues.length))
+  throw new Error(
+    'Management requires MONITOR_ADMIN_TOKEN, MONITOR_ADMIN_ACTOR_ID, MONITOR_AUDIT_REDIS_URL, and MONITOR_ADMIN_QUEUES',
+  );
 function log(entry: {
   level: 'debug' | 'error' | 'info';
   event: string;
@@ -64,6 +76,15 @@ const monitor = createStandaloneMonitor({
     : undefined,
   alertRules,
   notificationSinks: webhookUrl ? [createWebhookSink(webhookUrl)] : [],
+  management: managementEnabled
+    ? {
+        enabled: true,
+        auditRedisUrl: auditRedisUrl!,
+        adminToken: adminToken!,
+        adminActorId: adminActorId!,
+        adminQueues,
+      }
+    : undefined,
 });
 const server = createServer(monitor.handler);
 

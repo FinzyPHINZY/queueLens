@@ -15,7 +15,16 @@ import {
   type HistoryStoreOptions,
 } from './history-store.js';
 import { NotificationDispatcher, type NotificationSink } from './notifications.js';
+import {
+  validActorId,
+  type ManagementTarget,
+  type ManagementActor,
+} from '../../core/src/management.js';
+import { RedisAuditStore } from './audit-store.js';
+import { ManagementService } from './management.js';
+import type { IncomingMessage } from 'node:http';
 export { instrumentWorker, type WorkerTelemetryOptions } from './worker-telemetry.js';
+export { createCancellationProbe, type CancellationProbeOptions } from './cancellation-probe.js';
 
 export type { AuthTarget, Authorize, HttpConfig } from '../../server/src/http.js';
 export type {
@@ -29,13 +38,83 @@ export type { PollingOptions } from '../../core/src/poller.js';
 export type { AlertRule } from '../../core/src/alerts.js';
 export { createWebhookSink, createEmailSink } from './notifications.js';
 export type { NotificationSink, EmailMessage } from './notifications.js';
+export type {
+  ManagementAction,
+  ManagementTarget,
+  ManagementActor,
+  AuditEvent,
+} from '../../core/src/management.js';
+
+export interface ManagementOptions {
+  enabled: true;
+  auditRedisUrl: string;
+  auditKeyPrefix?: string;
+  adminToken?: string;
+  adminActorId?: string;
+  adminQueues?: string[];
+  authorizeAction?: (
+    request: IncomingMessage,
+    target: ManagementTarget,
+  ) => ManagementActor | null | Promise<ManagementActor | null>;
+  verifyCsrf?: (request: IncomingMessage) => boolean | Promise<boolean>;
+}
 
 export interface MonitorOptions
-  extends Omit<HttpConfig, 'registry' | 'poller' | 'history' | 'alertStore' | 'alertRules'> {
+  extends Omit<
+    HttpConfig,
+    'registry' | 'poller' | 'history' | 'alertStore' | 'alertRules' | 'management'
+  > {
   queues: BullQueue[];
   history?: HistoryStoreOptions;
   alertRules?: AlertRule[];
   notificationSinks?: NotificationSink[];
+  management?: ManagementOptions;
+}
+
+function validateManagementOptions(
+  queues: string[],
+  options: MonitorOptions | StandaloneOptions,
+): void {
+  const config = options.management;
+  if (!config) return;
+  if (config.enabled !== true) throw new Error('Management must be explicitly enabled');
+  if (Boolean(config.adminToken) === Boolean(config.authorizeAction))
+    throw new Error('Choose one management authorization strategy');
+  if (config.adminToken) {
+    if (config.adminToken === options.token || config.adminToken.length < 32)
+      throw new Error('Management token must be distinct and at least 32 characters');
+    if (!config.adminActorId || !validActorId(config.adminActorId))
+      throw new Error('A valid management actor ID is required');
+    if (!config.adminQueues?.length || config.adminQueues.some((name) => !queues.includes(name)))
+      throw new Error('Management scope must name configured queues');
+  } else if (!config.verifyCsrf) throw new Error('Embedded management requires a CSRF verifier');
+  redisOptions(config.auditRedisUrl);
+}
+
+function managementServices(queues: BullQueue[], options: MonitorOptions | StandaloneOptions) {
+  const config = options.management;
+  if (!config) return undefined;
+  validateManagementOptions(
+    queues.map((queue) => queue.name),
+    options,
+  );
+  const store = new RedisAuditStore({
+    redisUrl: config.auditRedisUrl,
+    keyPrefix: config.auditKeyPrefix,
+  });
+  const service = new ManagementService(queues, store);
+  return {
+    service,
+    http: {
+      service,
+      authorize: config.authorizeAction,
+      adminToken: config.adminToken,
+      actorId: config.adminActorId,
+      adminQueues: config.adminQueues,
+      bearerOnly: Boolean(config.adminToken),
+      verifyCsrf: config.verifyCsrf,
+    },
+  };
 }
 
 function historyServices(
@@ -73,9 +152,14 @@ export function createMonitor(options: MonitorOptions) {
   if (!options.token && !options.authorize)
     throw new Error('A monitor authorization strategy is required');
   validateDisclosurePolicy(options.redaction);
+  validateManagementOptions(
+    options.queues.map((queue) => queue.name),
+    options,
+  );
   const registry = new QueueRegistry(options.queues.map((queue) => new BullMqQueueAdapter(queue)));
   const poller = new SnapshotPoller(registry, options.polling);
   const history = historyServices(registry, poller, options);
+  const management = managementServices(options.queues, options);
   const handler = createHttpHandler({
     ...options,
     dashboardDir: options.dashboardDir ?? defaultDashboardDir,
@@ -84,6 +168,7 @@ export function createMonitor(options: MonitorOptions) {
     history: history.store,
     alertStore: history.store,
     alertRules: history.rules,
+    management: management?.http,
   });
   poller.start();
   history.collector?.start();
@@ -95,6 +180,7 @@ export function createMonitor(options: MonitorOptions) {
       history.collector?.stop();
       history.dispatcher?.stop();
       await history.store?.close();
+      await management?.service.close();
       await registry.close();
     },
   };
@@ -104,12 +190,16 @@ export function createMonitor(options: MonitorOptions) {
 export const createExpressMonitor = createMonitor;
 
 export interface StandaloneOptions
-  extends Omit<HttpConfig, 'registry' | 'poller' | 'history' | 'alertStore' | 'alertRules'> {
+  extends Omit<
+    HttpConfig,
+    'registry' | 'poller' | 'history' | 'alertStore' | 'alertRules' | 'management'
+  > {
   redisUrl: string;
   queueNames: string[];
   history?: HistoryStoreOptions;
   alertRules?: AlertRule[];
   notificationSinks?: NotificationSink[];
+  management?: ManagementOptions;
 }
 
 /** Create queues owned by this monitor; close() releases them on shutdown. */
@@ -128,6 +218,7 @@ export function createStandaloneMonitor(options: StandaloneOptions) {
   if (options.alertRules?.length && !options.history)
     throw new Error('Alert rules require history storage');
   if (options.history) validateHistoryStoreOptions(options.history);
+  validateManagementOptions(options.queueNames, options);
   new ReadBudget(options.polling?.maxConcurrentReads, options.polling?.queryTimeoutMs);
   const perQueue = options.polling?.maxReadsPerQueue ?? 2;
   if (!Number.isInteger(perQueue) || perQueue < 1 || perQueue > 8) {
@@ -138,25 +229,24 @@ export function createStandaloneMonitor(options: StandaloneOptions) {
     throw new Error('MONITOR_POLL_INTERVAL_MS must be between 1000 and 60000');
   }
   const connection = redisOptions(options.redisUrl);
+  const ownedQueues = options.queueNames.map(
+    (name) =>
+      new Queue(name, {
+        connection: {
+          ...connection,
+          connectTimeout: options.polling?.queryTimeoutMs ?? 2_000,
+          maxRetriesPerRequest: 1,
+          enableOfflineQueue: false,
+          retryStrategy: (attempts) => Math.min(30_000, 500 * 2 ** Math.min(attempts, 6)),
+        },
+      }),
+  );
   const registry = new QueueRegistry(
-    options.queueNames.map(
-      (name) =>
-        new BullMqQueueAdapter(
-          new Queue(name, {
-            connection: {
-              ...connection,
-              connectTimeout: options.polling?.queryTimeoutMs ?? 2_000,
-              maxRetriesPerRequest: 1,
-              enableOfflineQueue: false,
-              retryStrategy: (attempts) => Math.min(30_000, 500 * 2 ** Math.min(attempts, 6)),
-            },
-          }),
-          true,
-        ),
-    ),
+    ownedQueues.map((queue) => new BullMqQueueAdapter(queue, true)),
   );
   const poller = new SnapshotPoller(registry, options.polling);
   const history = historyServices(registry, poller, options);
+  const management = managementServices(ownedQueues, options);
   const handler = createHttpHandler({
     ...options,
     dashboardDir: options.dashboardDir ?? defaultDashboardDir,
@@ -165,6 +255,7 @@ export function createStandaloneMonitor(options: StandaloneOptions) {
     history: history.store,
     alertStore: history.store,
     alertRules: history.rules,
+    management: management?.http,
   });
   poller.start();
   history.collector?.start();
@@ -176,6 +267,7 @@ export function createStandaloneMonitor(options: StandaloneOptions) {
       history.collector?.stop();
       history.dispatcher?.stop();
       await history.store?.close();
+      await management?.service.close();
       await registry.close();
     },
   };

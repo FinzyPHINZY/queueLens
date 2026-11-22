@@ -10,7 +10,7 @@ Run `pnpm install --frozen-lockfile`, then `pnpm build` for compiled output, `pn
 
 ## Coding Style & Naming Conventions
 
-Use Node.js with strict TypeScript, two-space indentation, camelCase variables and functions, PascalCase types and components, and kebab-case directories. Run Prettier and ESLint before a pull request. Keep BullMQ calls behind the adapter and use public APIs. Preserve the read-only boundary; do not add queue mutations to monitor routes.
+Use Node.js with strict TypeScript, two-space indentation, camelCase variables and functions, PascalCase types and components, and kebab-case directories. Run Prettier and ESLint before a pull request. Keep BullMQ calls behind the adapters and use public APIs. Keep mutations in the explicitly enabled, audited admin namespace; ordinary monitor routes remain read-only.
 
 ## Testing Guidelines
 

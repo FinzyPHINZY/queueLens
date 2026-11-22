@@ -1,6 +1,6 @@
 # QueueLens
 
-QueueLens is a self-hosted, read-only BullMQ monitor. Stage 3 adds optional aggregate history, sustained alerts, notification delivery, and Prometheus metrics. **QueueLens is a working name.** The npm scope and public release are still being verified.
+QueueLens is a self-hosted BullMQ monitor with a read-only default. Stage 4 adds an explicitly enabled, audited management mode. **QueueLens is a working name.** The npm scope and public release are still being verified.
 
 ## Requirements
 
@@ -40,6 +40,16 @@ Metrics are `failed_count` (retained failed jobs), `failure_rate` (sampled failu
 Webhook delivery uses HTTPS (local HTTP is allowed), a five-second timeout, up to five attempts, and a stable `x-queuelens-event-id` for receiver deduplication. Delivery is at least once: a crash after remote acceptance can resend the same ID. Failures and attempts appear in the Alerts view. Embedded applications can use `createEmailSink(recipient, sendMail)` with their own SMTP or provider transport and pass it through `notificationSinks`; no email credentials are stored by QueueLens. Both adapters send aggregate alert fields only. Alert evaluation and delivery use the monitor process, separate from BullMQ worker processing.
 
 Protected endpoints include `GET /api/v1/queues/:name/history?range=1h|6h|24h`, `GET /api/v1/alerts/rules`, `/incidents`, `/notifications`, and `GET /api/v1/metrics` in Prometheus text format. Queue authorization applies to history, alerts, and metrics. Metrics expose only configured queue and state labels, capped at 100 queues, plus scrape partial and observation age gauges.
+
+## Explicit management mode
+
+Management remains disabled unless `MONITOR_MANAGEMENT_ENABLED=true`. Standalone mode also requires `MONITOR_ADMIN_TOKEN` (a distinct random value of at least 32 characters), `MONITOR_ADMIN_ACTOR_ID`, `MONITOR_ADMIN_QUEUES` (comma-separated authorized queue names), and `MONITOR_AUDIT_REDIS_URL`. The audit Redis must have AOF enabled; QueueLens waits for an AOF fsync before accepting an action and fails closed if audit storage is unavailable. Use a persistent Redis volume and backups. Audit events are append-only and are never automatically trimmed. The configured actor ID identifies the admin token, so use separate deployments or an embedded identity callback when individual attribution matters.
+
+The admin API is separate from ordinary read routes. `POST /api/v1/admin/queues/:name/actions/:action` accepts `retry`, `pause`, `resume`, `promote`, `remove`, `bulk-retry`, `clean`, or `cancel-request`. Send JSON and an `Idempotency-Key` header containing 8–128 URL-safe characters. A read token never grants these actions. `GET /api/v1/admin/capabilities` reports authorized actions; `GET /api/v1/admin/audit` lists recent audit events for authorized queues. Both require admin authorization. A result can be `succeeded` or `partial`; partial bulk results report each job. A 503 `MANAGEMENT_OUTCOME_UNCERTAIN` means the action may have happened but its result could not be durably recorded. Inspect audit and queue state before retrying with a new key.
+
+Bulk retry and clean require `POST /api/v1/admin/queues/:name/preview/:action` first. The preview returns exact job IDs, eligibility, and a five-minute token; send those IDs and the token in the action request. Bulk actions cap at 25 jobs and re-check each job before acting. Clean accepts only old completed or failed jobs (`state`, `olderThanMs`, `limit` in the preview). Remove rejects active jobs, flow-dependent jobs, and jobs with repeat metadata. Retry accepts failed jobs; promote accepts delayed jobs. Queue pause is global and lets active handlers finish. The browser Manage view presents these limits and requires confirmation.
+
+`cancel-request` records an advisory flag for an active job for one hour. A processor must opt in and check it with `createCancellationProbe({ redisUrl: process.env.MONITOR_AUDIT_REDIS_URL! })`; it decides when it can stop safely. QueueLens does not interrupt a running handler. Embedded management uses `management: { enabled: true, auditRedisUrl, authorizeAction, verifyCsrf }` with a per-action, per-queue actor callback. Cookie-authenticated requests require a same-origin `Origin` and a host-provided CSRF verifier. For TLS proxies, forward the trusted protocol as `X-Forwarded-Proto`; never trust this header from untrusted clients.
 
 ## Embed in an application
 

@@ -1,6 +1,7 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import { AdminView } from './admin.js';
 
 type Counts = Record<string, number>;
 type Meta = { observedAt: string; freshnessMs: number; partial: boolean; warnings: string[] };
@@ -113,7 +114,7 @@ function App() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics>();
   const [schedulers, setSchedulers] = useState<Scheduler[]>([]);
-  const [view, setView] = useState<'queues' | 'workers' | 'history' | 'alerts'>('queues');
+  const [view, setView] = useState<'queues' | 'workers' | 'history' | 'alerts' | 'admin'>('queues');
   const [streaming, setStreaming] = useState(false);
   const lastLiveRefresh = useRef(0);
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
@@ -503,6 +504,12 @@ function App() {
               >
                 ⚑ Alerts
               </button>
+              <button
+                className={view === 'admin' ? 'queue active' : 'queue'}
+                onClick={() => setView('admin')}
+              >
+                ⚙ Manage
+              </button>
             </nav>
             <div className="sidebar-label">
               QUEUES <span>{queues.length}</span>
@@ -538,7 +545,9 @@ function App() {
             </div>
           </aside>
           <main className="content">
-            {view === 'history' ? (
+            {view === 'admin' ? (
+              <AdminView base={apiBase} defaultQueue={selected} />
+            ) : view === 'history' ? (
               <HistoryView token={token} queue={selected} />
             ) : view === 'alerts' ? (
               <AlertsView token={token} />

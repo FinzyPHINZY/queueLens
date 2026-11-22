@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -16,6 +16,16 @@ import { errorCategory, sampleQueueDiagnostics } from '../../core/src/diagnostic
 import { ReadBudgetExceededError, ReadTimeoutError } from '../../core/src/read-budget.js';
 import type { HistoryReader } from '../../core/src/history.js';
 import type { AlertRule, AlertStorage } from '../../core/src/alerts.js';
+import {
+  managementActions,
+  type ManagementActor,
+  type ManagementTarget,
+} from '../../core/src/management.js';
+import {
+  ManagementError,
+  type ManagementCommand,
+  type ManagementService,
+} from '../../monitor/src/management.js';
 import {
   safeJobDetail,
   safeJobSummary,
@@ -44,6 +54,18 @@ export interface HttpConfig {
   history?: HistoryReader;
   alertStore?: AlertStorage;
   alertRules?: AlertRule[];
+  management?: {
+    service: ManagementService;
+    authorize?: (
+      request: IncomingMessage,
+      target: ManagementTarget,
+    ) => ManagementActor | null | Promise<ManagementActor | null>;
+    adminToken?: string;
+    actorId?: string;
+    adminQueues?: string[];
+    bearerOnly?: boolean;
+    verifyCsrf?: (request: IncomingMessage) => boolean | Promise<boolean>;
+  };
   log?: (entry: {
     level: 'debug' | 'error';
     event: 'api_read' | 'read_failed';
@@ -150,6 +172,10 @@ async function serveDashboard(
 export function createHttpHandler(config: HttpConfig) {
   if (!config.token && !config.authorize)
     throw new Error('A monitor authorization strategy is required');
+  if (config.management && !config.management.bearerOnly && !config.management.verifyCsrf)
+    throw new Error('Cookie-authenticated management requires a CSRF verifier');
+  if (config.management && !config.management.adminToken && !config.management.authorize)
+    throw new Error('Management authorization is required');
   validateDisclosurePolicy(config.redaction);
   const poller = config.poller ?? new SnapshotPoller(config.registry, config.polling);
 
@@ -164,6 +190,147 @@ export function createHttpHandler(config: HttpConfig) {
       if (await permitted(req, { queueName: name, permission: 'queue:read' })) allowed.push(name);
     }
     return allowed;
+  }
+
+  async function adminActor(
+    req: IncomingMessage,
+    target: ManagementTarget,
+  ): Promise<ManagementActor | null> {
+    const management = config.management;
+    if (!management) return null;
+    if (management.adminToken) {
+      if (!tokenMatches(req.headers.authorization, management.adminToken)) return null;
+      if (
+        target.queueName &&
+        management.adminQueues &&
+        !management.adminQueues.includes(target.queueName)
+      )
+        return null;
+      return { id: management.actorId! };
+    }
+    return (await management.authorize?.(req, target)) ?? null;
+  }
+
+  async function adminBody(req: IncomingMessage): Promise<ManagementCommand> {
+    if (req.headers['content-type']?.split(';')[0]?.trim() !== 'application/json')
+      throw new ManagementError('INVALID_CONTENT_TYPE', 415);
+    let raw = '';
+    for await (const chunk of req) {
+      raw += chunk.toString();
+      if (raw.length > 4_096) throw new ManagementError('INVALID_REQUEST', 413);
+    }
+    try {
+      const value: unknown = JSON.parse(raw);
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw new Error('Invalid object');
+      return value as ManagementCommand;
+    } catch {
+      throw new ManagementError('INVALID_REQUEST', 400);
+    }
+  }
+
+  async function handleAdmin(
+    req: IncomingMessage,
+    res: ServerResponse,
+    path: string,
+  ): Promise<void> {
+    if (!config.management)
+      return error(res, 404, 'INVALID_REQUEST', 'Management mode is disabled');
+    const management = config.management;
+    try {
+      if (!management.bearerOnly && req.method !== 'GET') {
+        const origin = req.headers.origin;
+        const protocol =
+          req.headers['x-forwarded-proto'] === 'https' ||
+          Boolean((req.socket as { encrypted?: boolean } | undefined)?.encrypted)
+            ? 'https:'
+            : 'http:';
+        if (
+          !origin ||
+          !URL.canParse(origin) ||
+          !req.headers.host ||
+          new URL(origin).origin !== `${protocol}//${req.headers.host}` ||
+          !(await management.verifyCsrf?.(req))
+        )
+          return error(res, 403, 'FORBIDDEN', 'CSRF verification failed');
+      }
+      if (path === '/api/v1/admin/audit' && req.method === 'GET') {
+        const allowed = new Set<string>();
+        for (const name of config.registry.names())
+          if (await adminActor(req, { queueName: name, permission: 'audit:read' }))
+            allowed.add(name);
+        if (!allowed.size) return error(res, 403, 'FORBIDDEN', 'Access denied');
+        const events = (await management.service.recentAudit(100)).filter((event) =>
+          allowed.has(event.queue),
+        );
+        return send(res, 200, { success: true, data: events, meta: responseMeta() });
+      }
+      if (path === '/api/v1/admin/capabilities' && req.method === 'GET') {
+        const queues = [];
+        for (const name of config.registry.names()) {
+          const actions = [];
+          for (const action of managementActions)
+            if (await adminActor(req, { queueName: name, permission: action }))
+              actions.push(action);
+          if (actions.length) queues.push({ name, actions });
+        }
+        if (!queues.length) return error(res, 403, 'FORBIDDEN', 'Access denied');
+        return send(res, 200, {
+          success: true,
+          data: { enabled: true, queues },
+          meta: responseMeta(),
+        });
+      }
+      const match = /^\/api\/v1\/admin\/queues\/([^/]+)\/(actions|preview)\/([a-z-]+)$/.exec(path);
+      if (!match) return error(res, 404, 'INVALID_REQUEST', 'Route not found');
+      if (req.method !== 'POST')
+        return error(res, 405, 'INVALID_REQUEST', 'Management requests require POST');
+      const name = segment(match[1]!);
+      if (!name || !config.registry.get(name))
+        return error(res, 404, 'QUEUE_NOT_FOUND', 'Queue not found');
+      const action = match[3]!;
+      const preview = match[2] === 'preview';
+      if (preview && action !== 'bulk-retry' && action !== 'clean')
+        return error(res, 404, 'INVALID_REQUEST', 'Route not found');
+      if (!preview && !managementActions.includes(action as (typeof managementActions)[number]))
+        return error(res, 404, 'INVALID_REQUEST', 'Route not found');
+      const actor = await adminActor(req, {
+        queueName: name,
+        permission: preview
+          ? (`preview:${action}` as 'preview:bulk-retry' | 'preview:clean')
+          : (action as (typeof managementActions)[number]),
+      });
+      if (!actor) return error(res, 403, 'FORBIDDEN', 'Access denied');
+      const body = await adminBody(req);
+      if (preview) {
+        const result = await management.service.preview(
+          actor.id,
+          name,
+          action as 'bulk-retry' | 'clean',
+          body,
+        );
+        return send(res, 200, { success: true, data: result, meta: responseMeta() });
+      }
+      const key = req.headers['idempotency-key'];
+      if (typeof key !== 'string') throw new ManagementError('IDEMPOTENCY_KEY_REQUIRED', 400);
+      const result = await management.service.execute(
+        actor.id,
+        action as (typeof managementActions)[number],
+        name,
+        body,
+        key,
+        randomUUID(),
+      );
+      return send(res, result.status === 'partial' ? 207 : 200, {
+        success: true,
+        data: result,
+        meta: responseMeta(),
+      });
+    } catch (cause) {
+      if (cause instanceof ManagementError) return error(res, cause.status, cause.code, cause.code);
+      config.log?.({ level: 'error', event: 'read_failed', code: 'INTERNAL_ERROR' });
+      return error(res, 503, 'REDIS_UNAVAILABLE', 'Management is unavailable');
+    }
   }
 
   async function streamSnapshots(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -232,10 +399,11 @@ export function createHttpHandler(config: HttpConfig) {
   }
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const adminPath = req.url?.startsWith('/api/v1/admin/') ?? false;
     if (
       (req.url?.length ?? 0) > 2_048 ||
-      req.headers['transfer-encoding'] ||
-      Number(req.headers['content-length'] ?? 0) > 0
+      Number(req.headers['content-length'] ?? 0) > (adminPath ? 4_096 : 0) ||
+      (!adminPath && req.headers['transfer-encoding'])
     ) {
       return error(res, 413, 'INVALID_REQUEST', 'Request is too large');
     }
@@ -247,6 +415,7 @@ export function createHttpHandler(config: HttpConfig) {
     }
     const path = url.pathname;
     config.log?.({ level: 'debug', event: 'api_read' });
+    if (path.startsWith('/api/v1/admin/')) return handleAdmin(req, res, path);
     if (req.method !== 'GET')
       return error(res, 405, 'INVALID_REQUEST', 'Read-only mode permits GET only');
     const originalUrl = (req as IncomingMessage & { originalUrl?: string }).originalUrl;

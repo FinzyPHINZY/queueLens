@@ -1,3 +1,5 @@
+import type { ManagementErrorCode } from './management.js';
+
 export const observedStates = [
   'waiting',
   'active',
@@ -107,6 +109,7 @@ export interface ResponseMeta {
 }
 
 export type MonitorErrorCode =
+  | ManagementErrorCode
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'QUEUE_NOT_FOUND'
