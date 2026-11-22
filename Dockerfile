@@ -14,5 +14,6 @@ COPY tsconfig.json tsconfig.build.json eslint.config.mjs ./
 COPY packages ./packages
 COPY apps ./apps
 COPY scripts ./scripts
+COPY README.md LICENSE ./
 RUN pnpm build
 CMD ["pnpm", "start"]
