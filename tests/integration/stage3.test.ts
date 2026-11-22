@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Redis } from 'ioredis';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import type { HistorySample } from '../../packages/core/src/history.js';
 import { AlertEngine, type AlertRule } from '../../packages/core/src/alerts.js';
 import { RedisHistoryStore } from '../../packages/monitor/src/history-store.js';
+import {
+  createWebhookSink,
+  NotificationDispatcher,
+} from '../../packages/monitor/src/notifications.js';
 
 const url = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379';
 const counts = {
@@ -114,5 +120,78 @@ test('incident and notification state persists across monitor instances', async 
     await redis.quit();
     await first.close();
     await second.close();
+  }
+});
+
+test('sustained incident sends one opening webhook and one recovery after restart', async () => {
+  const prefix = `queuelens:test:delivery:${process.pid}:${Date.now()}`;
+  const store = new RedisHistoryStore({
+    redisUrl: url,
+    keyPrefix: prefix,
+    collectionIntervalMs: 5_000,
+  });
+  const redis = new Redis(url);
+  const received: { id: string; body: string }[] = [];
+  const server = createServer(async (request, response) => {
+    let body = '';
+    for await (const chunk of request) body += chunk.toString();
+    received.push({ id: String(request.headers['x-queuelens-event-id']), body });
+    response.writeHead(200).end();
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const dispatcher = new NotificationDispatcher(store, [
+    createWebhookSink(`http://127.0.0.1:${address.port}/hook`),
+  ]);
+  const rule: AlertRule = {
+    id: 'demo-backlog',
+    queue: 'demo',
+    metric: 'backlog',
+    threshold: 2,
+    sustainMs: 5_000,
+    cooldownMs: 5_000,
+    channel: 'webhook',
+    enabled: true,
+  };
+  const at = Math.floor(Date.now() / 5_000) * 5_000 - 20_000;
+  const observed: HistorySample = {
+    queue: 'demo',
+    observedAt: at,
+    counts,
+    paused: false,
+    oldestWaitingAgeMs: null,
+    completedPerMinute: 0,
+    failedPerMinute: 0,
+    rateSampleSize: 0,
+    source: 'sampled',
+  };
+  try {
+    const engine = new AlertEngine(store, [rule], 5_000);
+    await engine.evaluate(observed);
+    await engine.evaluate({ ...observed, observedAt: at + 5_000 });
+    await dispatcher.dispatch(Date.now());
+    await new AlertEngine(store, [rule], 5_000).evaluate({ ...observed, observedAt: at + 10_000 });
+    await new AlertEngine(store, [rule], 5_000).evaluate({
+      ...observed,
+      observedAt: at + 15_000,
+      counts: { ...counts, waiting: 0 },
+    });
+    await dispatcher.dispatch(Date.now());
+    await dispatcher.dispatch(Date.now());
+    assert.deepEqual(
+      received.map((event) => JSON.parse(event.body).kind),
+      ['opening', 'recovery'],
+    );
+    assert.equal(new Set(received.map((event) => event.id)).size, 2);
+    assert.ok(received.every((event) => !event.body.includes('secret')));
+  } finally {
+    server.close();
+    await once(server, 'close');
+    const keys = await redis.keys(`${prefix}:*`);
+    if (keys.length) await redis.del(...keys);
+    await redis.quit();
+    await store.close();
   }
 });
