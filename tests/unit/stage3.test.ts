@@ -18,6 +18,9 @@ import {
 } from '../../packages/monitor/src/notifications.js';
 import { QueueRegistry, type ReadOnlyQueue } from '../../packages/core/src/monitor.js';
 import { createHttpHandler } from '../../packages/server/src/http.js';
+import { HistoryCollector } from '../../packages/monitor/src/history-collector.js';
+import { SnapshotPoller } from '../../packages/core/src/poller.js';
+import type { RedisHistoryStore } from '../../packages/monitor/src/history-store.js';
 
 class MemoryStore implements AlertStorage {
   states = new Map<string, RuleState>();
@@ -208,6 +211,43 @@ test('notification adapters use safe aggregate fields and validate destinations'
   assert.doesNotMatch(message, /payload|password|stacktrace/i);
   assert.throws(() => createWebhookSink('http://example.com/hook'), /HTTPS/);
   assert.throws(() => createEmailSink('invalid', async () => undefined), /recipient/);
+});
+
+test('history collection tolerates a failed history store without interrupting queue reads', async () => {
+  const queue: ReadOnlyQueue = {
+    name: 'demo',
+    async getCounts() {
+      return counts;
+    },
+    async isPaused() {
+      return false;
+    },
+    async listJobs() {
+      return [];
+    },
+    async getJob() {
+      return null;
+    },
+    async getJobMetadata() {
+      return null;
+    },
+  };
+  const registry = new QueueRegistry([queue]);
+  const poller = new SnapshotPoller(registry);
+  let attempts = 0;
+  const store = {
+    collectionIntervalMs: 60_000,
+    async append() {
+      attempts++;
+      throw new Error('history Redis unavailable');
+    },
+  } as unknown as RedisHistoryStore;
+  const collector = new HistoryCollector(registry, poller, store);
+  await collector.collect();
+  assert.equal(attempts, 1);
+  assert.equal((await poller.get('demo')).data.name, 'demo');
+  collector.stop();
+  poller.stop();
 });
 
 test('history, alerts, and metrics enforce queue authorization and expose no payloads', async () => {
