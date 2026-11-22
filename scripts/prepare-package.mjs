@@ -6,3 +6,5 @@ await rm('packages/monitor/dist', { recursive: true, force: true });
 await mkdir('packages/monitor/dist', { recursive: true });
 await cp('dist/packages', 'packages/monitor/dist/packages', { recursive: true });
 await cp('dist/dashboard', 'packages/monitor/dist/dashboard', { recursive: true });
+await cp('README.md', 'packages/monitor/README.md');
+await cp('LICENSE', 'packages/monitor/LICENSE');

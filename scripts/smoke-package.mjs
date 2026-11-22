@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import process from 'node:process';
@@ -32,6 +33,14 @@ try {
     'typescript@5.9.3',
     '@types/node@22.19.17',
   ]);
+  const installed = join(temporary, 'node_modules/@queueharbor/monitor');
+  const manifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
+  assert.equal(manifest.name, '@queueharbor/monitor');
+  assert.equal(manifest.version, '0.1.0');
+  assert.equal(manifest.private, false);
+  assert.equal(manifest.license, 'MIT');
+  assert.match(await readFile(join(installed, 'README.md'), 'utf8'), /^# QueueHarbor/m);
+  assert.match(await readFile(join(installed, 'LICENSE'), 'utf8'), /^MIT License/m);
   await writeFile(
     join(temporary, 'smoke.mjs'),
     `import assert from 'node:assert/strict';
