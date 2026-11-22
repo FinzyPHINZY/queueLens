@@ -22,9 +22,20 @@ async function commandCount() {
   return [...info.matchAll(/calls=(\d+)/g)].reduce((total, match) => total + Number(match[1]), 0);
 }
 
-async function run(label, monitored, diagnostics = false) {
+async function run(label, monitored, diagnostics = false, history = false) {
   const monitor = monitored
-    ? createMonitor({ queues: [queue], token, polling: { intervalMs: 1_000 } })
+    ? createMonitor({
+        queues: [queue],
+        token,
+        polling: { intervalMs: 1_000 },
+        history: history
+          ? {
+              redisUrl,
+              collectionIntervalMs: 5_000,
+              keyPrefix: `queuelens:benchmark:${process.pid}`,
+            }
+          : undefined,
+      })
     : null;
   const server = monitor ? createServer(monitor.handler) : null;
   if (server) await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -114,8 +125,11 @@ try {
   await worker.waitUntilReady();
   globalThis.console.log(JSON.stringify(await run('baseline', false)));
   globalThis.console.log(JSON.stringify(await run('monitor', true)));
+  globalThis.console.log(JSON.stringify(await run('monitor+history', true, false, true)));
   globalThis.console.log(JSON.stringify(await run('monitor+diagnostics', true, true)));
 } finally {
+  const keys = await redis.keys(`queuelens:benchmark:${process.pid}:*`);
+  if (keys.length) await redis.del(...keys);
   await worker.close();
   await queue.obliterate({ force: true });
   await queue.close();

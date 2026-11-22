@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`packages/core/` holds read-only queue contracts and the registry, `packages/bullmq-adapter/` wraps public BullMQ APIs, and `packages/server/` handles HTTP. `apps/standalone/` runs the monitor; `apps/example-bullmq/` provides sample jobs. Tests live in `tests/unit/` and `tests/integration/`. Local planning and architecture notes live in ignored `docs/`; they are not part of the repository. The React dashboard and other later-stage components are still planned.
+`packages/core/` holds read-only queue contracts, polling, history, and alert logic. `packages/bullmq-adapter/` wraps public BullMQ APIs, `packages/monitor/` assembles the service, and `packages/server/` handles HTTP. `apps/standalone/` runs the monitor, `apps/dashboard/` contains the React UI, and `apps/example-bullmq/` provides sample jobs. Tests live in `tests/unit/`, `tests/integration/`, and `tests/browser/`. Local plans in ignored `docs/` are not part of Git.
 
 ## Build, Test, and Development Commands
 

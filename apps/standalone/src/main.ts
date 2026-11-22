@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { createStandaloneMonitor } from '../../../packages/monitor/src/index.js';
+import { createWebhookSink, type AlertRule } from '../../../packages/monitor/src/index.js';
 
 const names = (process.env.MONITOR_QUEUES ?? 'demo')
   .split(',')
@@ -20,6 +21,10 @@ const allowedPaths = (process.env.MONITOR_ALLOWED_PATHS ?? '').split(',').filter
 const redactPaths = (process.env.MONITOR_REDACT_PATHS ?? '').split(',').filter(Boolean);
 const logLevel = process.env.MONITOR_LOG_LEVEL ?? 'info';
 const levels = ['silent', 'error', 'info', 'debug'] as const;
+const historyRedisUrl = process.env.MONITOR_HISTORY_REDIS_URL;
+const alertRules = JSON.parse(process.env.MONITOR_ALERT_RULES_JSON ?? '[]') as AlertRule[];
+if (!Array.isArray(alertRules)) throw new Error('MONITOR_ALERT_RULES_JSON must be an array');
+const webhookUrl = process.env.MONITOR_ALERT_WEBHOOK_URL;
 
 if (!token || names.length === 0 || !Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error('Set MONITOR_TOKEN, at least one MONITOR_QUEUES name, and a valid MONITOR_PORT');
@@ -50,6 +55,15 @@ const monitor = createStandaloneMonitor({
   polling: { intervalMs, maxConcurrentReads, maxReadsPerQueue, queryTimeoutMs },
   redaction: { payloadAccess, allowedPaths, redactPaths, showFailureDetails },
   log,
+  history: historyRedisUrl
+    ? {
+        redisUrl: historyRedisUrl,
+        collectionIntervalMs: Number(process.env.MONITOR_HISTORY_INTERVAL_MS ?? 60_000),
+        retentionMs: Number(process.env.MONITOR_HISTORY_RETENTION_MS ?? 86_400_000),
+      }
+    : undefined,
+  alertRules,
+  notificationSinks: webhookUrl ? [createWebhookSink(webhookUrl)] : [],
 });
 const server = createServer(monitor.handler);
 
