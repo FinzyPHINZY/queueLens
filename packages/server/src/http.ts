@@ -136,7 +136,7 @@ function failureStatus(cause: unknown): {
   return { status: 503, code: 'REDIS_UNAVAILABLE', message: 'Queue data is unavailable' };
 }
 
-const fallbackPage = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QueueLens</title></head><body><h1>QueueLens</h1><p>Build the dashboard with <code>pnpm dashboard:build</code> to enable the interface.</p></body></html>`;
+const fallbackPage = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QueueHarbor</title></head><body><h1>QueueHarbor</h1><p>Build the dashboard with <code>pnpm dashboard:build</code> to enable the interface.</p></body></html>`;
 
 async function serveDashboard(
   path: string,

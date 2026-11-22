@@ -9,7 +9,7 @@ import { createMonitor } from '../dist/packages/monitor/src/index.js';
 
 const redisUrl = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379';
 const token = 'local-benchmark-token';
-const name = `queuelens-bench-${process.pid}`;
+const name = `queueharbor-bench-${process.pid}`;
 const connection = redisOptions(redisUrl);
 const queue = new Queue(name, { connection });
 const redis = new Redis(redisUrl);
@@ -32,7 +32,7 @@ async function run(label, monitored, diagnostics = false, history = false) {
           ? {
               redisUrl,
               collectionIntervalMs: 5_000,
-              keyPrefix: `queuelens:benchmark:${process.pid}`,
+              keyPrefix: `queueharbor:benchmark:${process.pid}`,
             }
           : undefined,
       })
@@ -128,7 +128,7 @@ try {
   globalThis.console.log(JSON.stringify(await run('monitor+history', true, false, true)));
   globalThis.console.log(JSON.stringify(await run('monitor+diagnostics', true, true)));
 } finally {
-  const keys = await redis.keys(`queuelens:benchmark:${process.pid}:*`);
+  const keys = await redis.keys(`queueharbor:benchmark:${process.pid}:*`);
   if (keys.length) await redis.del(...keys);
   await worker.close();
   await queue.obliterate({ force: true });

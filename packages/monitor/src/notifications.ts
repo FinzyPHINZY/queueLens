@@ -24,7 +24,7 @@ export function createEmailSink(
       const state = event.kind === 'opening' ? 'opened' : 'recovered';
       await sendMail({
         to,
-        subject: `QueueLens alert ${state}: ${event.ruleId}`,
+        subject: `QueueHarbor alert ${state}: ${event.ruleId}`,
         text: `Event ${event.id}\nQueue: ${event.queue}\nMetric: ${event.metric}\nValue: ${event.value}\nThreshold: ${event.threshold}\nTime: ${new Date(event.at).toISOString()}\n`,
       });
     },

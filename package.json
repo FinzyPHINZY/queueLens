@@ -1,5 +1,5 @@
 {
-  "name": "queuelens",
+  "name": "queueharbor",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -29,6 +29,7 @@
     "test:unit": "node --import tsx tests/unit/http.test.ts && node --import tsx tests/unit/adapter.test.ts && node --import tsx tests/unit/stage1.test.ts && node --import tsx tests/unit/stage2.test.ts && node --import tsx tests/unit/stage3.test.ts && node --import tsx tests/unit/stage4.test.ts",
     "test:integration": "node --import tsx tests/integration/bullmq.test.ts && node --import tsx tests/integration/standalone.test.ts && node --import tsx tests/integration/stage2.test.ts && node --import tsx tests/integration/stage3.test.ts && node --import tsx tests/integration/stage4.test.ts",
     "test:browser": "playwright test tests/browser/dashboard.test.ts",
+    "test:package": "pnpm build && node scripts/smoke-package.mjs",
     "benchmark": "pnpm build && node scripts/benchmark.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
   },

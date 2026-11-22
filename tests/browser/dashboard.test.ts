@@ -38,7 +38,7 @@ test('browser shows queues and sanitized job detail; token stays in request head
   page,
 }) => {
   const requested: string[] = [];
-  await page.route('http://queuelens.test/**', async (route) => {
+  await page.route('http://queueharbor.test/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/api/v1/')) {
       if (!route.request().headers().authorization) {
@@ -95,7 +95,7 @@ test('browser shows queues and sanitized job detail; token stays in request head
           : 'text/html',
     });
   });
-  await page.goto('http://queuelens.test/');
+  await page.goto('http://queueharbor.test/');
   await page.getByLabel('Access token').fill('browser-token');
   await page.getByRole('button', { name: 'Open monitor' }).click();
   await page.getByRole('heading', { name: 'email', exact: true }).waitFor();
@@ -120,7 +120,7 @@ test('browser shows queues and sanitized job detail; token stays in request head
 
 test('dashboard fits a mobile viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route('http://queuelens.test/**', async (route) => {
+  await page.route('http://queueharbor.test/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/api/v1/')) {
       if (!route.request().headers().authorization) {
@@ -156,7 +156,7 @@ test('dashboard fits a mobile viewport', async ({ page }) => {
     const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     await route.fulfill({ path: resolve(dist, path) });
   });
-  await page.goto('http://queuelens.test/');
+  await page.goto('http://queueharbor.test/');
   await page.getByLabel('Access token').fill('browser-token');
   await page.getByRole('button', { name: 'Open monitor' }).click();
   await page.getByRole('heading', { name: 'Jobs' }).waitFor();
@@ -170,7 +170,7 @@ test('dashboard fits a mobile viewport', async ({ page }) => {
 });
 
 test('session-authorized embedded dashboard opens without a token prompt', async ({ page }) => {
-  await page.route('http://queuelens.test/**', async (route) => {
+  await page.route('http://queueharbor.test/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/monitor/api/v1/')) {
       const data = url.pathname.endsWith('/workers')
@@ -195,7 +195,7 @@ test('session-authorized embedded dashboard opens without a token prompt', async
       url.pathname === '/monitor/' ? 'index.html' : url.pathname.replace('/monitor/', '');
     await route.fulfill({ path: resolve(dist, path) });
   });
-  await page.goto('http://queuelens.test/monitor/');
+  await page.goto('http://queueharbor.test/monitor/');
   await page.getByRole('heading', { name: 'Jobs' }).waitFor();
   assert.equal(await page.getByLabel('Access token').count(), 0);
 });
@@ -211,7 +211,7 @@ test('live queue stream reconnects after interruption while polling remains avai
       paused: false,
     },
   ];
-  await page.route('http://queuelens.test/**', async (route) => {
+  await page.route('http://queueharbor.test/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === '/api/v1/events') {
       connections++;
@@ -249,7 +249,7 @@ test('live queue stream reconnects after interruption while polling remains avai
     const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     await route.fulfill({ path: resolve(dist, path) });
   });
-  await page.goto('http://queuelens.test/');
+  await page.goto('http://queueharbor.test/');
   await page.getByLabel('Access token').fill('browser-token');
   await page.getByRole('button', { name: 'Open monitor' }).click();
   await page.getByText('Polling fallback', { exact: false }).waitFor();
@@ -263,7 +263,7 @@ test('history shows sampling gaps and alerts show incident delivery', async ({ p
     counts: { waiting: 2, active: 0, delayed: 0, completed: 0, failed: 1 },
     paused: false,
   };
-  await page.route('http://queuelens.test/**', async (route) => {
+  await page.route('http://queueharbor.test/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/api/v1/')) {
       if (!route.request().headers().authorization) {
@@ -340,7 +340,7 @@ test('history shows sampling gaps and alerts show incident delivery', async ({ p
     const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     await route.fulfill({ path: resolve(dist, path) });
   });
-  await page.goto('http://queuelens.test/');
+  await page.goto('http://queueharbor.test/');
   await page.getByLabel('Access token').fill('browser-token');
   await page.getByRole('button', { name: 'Open monitor' }).click();
   await page.getByRole('button', { name: /History/ }).click();
@@ -355,7 +355,7 @@ test('history shows sampling gaps and alerts show incident delivery', async ({ p
 
 test('management requires admin token and explicit confirmation', async ({ page }) => {
   let mutations = 0;
-  await page.route('http://queuelens.test/**', async (route) => {
+  await page.route('http://queueharbor.test/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/api/v1/admin/')) {
       if (route.request().headers().authorization !== 'Bearer admin-token') {
@@ -416,7 +416,7 @@ test('management requires admin token and explicit confirmation', async ({ page 
     const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     await route.fulfill({ path: resolve(dist, path) });
   });
-  await page.goto('http://queuelens.test/');
+  await page.goto('http://queueharbor.test/');
   await page.getByLabel('Access token').fill('read-token');
   await page.getByRole('button', { name: 'Open monitor' }).click();
   await page.getByRole('button', { name: /Manage/ }).click();

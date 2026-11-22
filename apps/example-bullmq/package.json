@@ -1,5 +1,5 @@
 {
-  "name": "@queuelens/example-bullmq",
+  "name": "@queueharbor/example-bullmq",
   "version": "0.0.0",
   "private": true,
   "type": "module"

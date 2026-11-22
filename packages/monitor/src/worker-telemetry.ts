@@ -14,7 +14,7 @@ export interface WorkerTelemetryOptions {
   onError?: (error: Error) => void;
 }
 
-/** Optional, payload-free telemetry written by the worker to QueueLens-owned keys. */
+/** Optional, payload-free telemetry written by the worker to QueueHarbor-owned keys. */
 export function instrumentWorker(worker: Worker, options: WorkerTelemetryOptions) {
   const id = options.id ?? randomUUID();
   const intervalMs = options.heartbeatIntervalMs ?? 5_000;

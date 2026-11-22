@@ -412,7 +412,7 @@ function App() {
         <div className="brand">
           <span className="mark">Q</span>
           <div>
-            <strong>QueueLens</strong>
+            <strong>QueueHarbor</strong>
             <small>Read-only BullMQ monitor</small>
           </div>
         </div>
@@ -449,7 +449,7 @@ function App() {
       {!connected ? (
         <main className="login">
           <div className="login-card">
-            <div className="eyebrow">WELCOME TO QUEUELENS</div>
+            <div className="eyebrow">WELCOME TO QUEUEHARBOR</div>
             <h1>See what your queues are doing.</h1>
             <p>Enter the monitor access token to inspect queue activity and failed jobs.</p>
             <form

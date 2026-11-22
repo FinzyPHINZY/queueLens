@@ -7,6 +7,7 @@
 ## Build, Test, and Development Commands
 
 Run `pnpm install --frozen-lockfile`, then `pnpm build` for compiled output, `pnpm typecheck` for static checks, `pnpm lint` for ESLint, and `pnpm format:check` for Prettier. `pnpm dev` starts the standalone monitor and requires `MONITOR_TOKEN`. `pnpm example:worker` and `pnpm example:seed` exercise the sample queue. `pnpm test:unit` needs no Redis; `pnpm test` includes real Redis integration tests. See `README.md` for local Redis and Docker Compose setup.
+Run `pnpm test:package` to install the built tarball in a separate temporary project and check its ESM and TypeScript exports; it downloads isolated dependencies.
 
 ## Coding Style & Naming Conventions
 
