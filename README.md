@@ -25,7 +25,7 @@ Disclosure settings are `MONITOR_PAYLOAD_ACCESS=deny|allow` (default deny), comm
 
 ## Optional history and alerts
 
-Set `MONITOR_HISTORY_REDIS_URL` to enable a separate, monitor-owned Redis connection for aggregate history. The default sample interval is 60 seconds (`MONITOR_HISTORY_INTERVAL_MS`, 5000–3600000) and retention is 24 hours (`MONITOR_HISTORY_RETENTION_MS`, 3600000–2592000000). History uses `queuelens:v1:` keys, keeps at most 10,000 points per queue, and never stores job payloads. Missed samples appear as gaps. The dashboard offers 1h, 6h, and 24h ranges when retention permits. Redis persistence is needed if history and incident state must survive Redis loss.
+Set `MONITOR_HISTORY_REDIS_URL` to enable a separate, monitor-owned Redis connection for aggregate history. The default sample interval is 60 seconds (`MONITOR_HISTORY_INTERVAL_MS`, 5000–3600000) and retention is 24 hours (`MONITOR_HISTORY_RETENTION_MS`, 3600000–2592000000). History uses `queuelens:v1:` keys, keeps at most 10,000 points per queue, and never stores job payloads. Missed samples appear as gaps. The dashboard charts waiting jobs and sampled failure rate with 1h, 6h, and 24h ranges when retention permits. Redis persistence is needed if history and incident state must survive Redis loss.
 
 Alerts are opt-in. Set `MONITOR_ALERT_RULES_JSON` to an array of rules and `MONITOR_ALERT_WEBHOOK_URL` for webhook delivery. For example:
 

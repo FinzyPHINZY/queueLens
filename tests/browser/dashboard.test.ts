@@ -345,6 +345,7 @@ test('history shows sampling gaps and alerts show incident delivery', async ({ p
   await page.getByRole('button', { name: 'Open monitor' }).click();
   await page.getByRole('button', { name: /History/ }).click();
   await page.getByRole('heading', { name: 'Queue history' }).waitFor();
+  await page.getByRole('heading', { name: 'Failure rate' }).waitFor();
   await page.getByText('1 missing periods', { exact: false }).waitFor();
   await page.screenshot({ path: 'test-results/dashboard-history.png', fullPage: true });
   await page.getByRole('button', { name: /Alerts/ }).click();

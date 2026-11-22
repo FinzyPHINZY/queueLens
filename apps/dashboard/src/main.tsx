@@ -1168,6 +1168,64 @@ type NotificationView = {
   lastErrorCode?: string;
 };
 
+function HistoryPlot({
+  slots,
+  value,
+  label,
+  color,
+}: {
+  slots: HistorySlot[];
+  value: (sample: NonNullable<HistorySlot['sample']>) => number | null;
+  label: string;
+  color: string;
+}) {
+  const series = slots.map((slot, index) => {
+    const raw = slot.sample ? value(slot.sample) : null;
+    return {
+      x: (index * 100) / Math.max(1, slots.length - 1),
+      y: typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, raw) : null,
+    };
+  });
+  const maximum = Math.max(1, ...series.map((point) => point.y ?? 0));
+  const segments: string[][] = [];
+  for (let index = 0; index < series.length; index++) {
+    const point = series[index]!;
+    if (point.y === null) continue;
+    if (!segments.length || series[index - 1]?.y === null) segments.push([]);
+    segments[segments.length - 1]!.push(`${point.x},${100 - (point.y * 100) / maximum}`);
+  }
+  return (
+    <svg
+      role="img"
+      aria-label={label}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      style={{ width: '100%', height: 220, padding: 20 }}
+    >
+      {segments.map((points, index) =>
+        points.length > 1 ? (
+          <polyline
+            key={index}
+            points={points.join(' ')}
+            fill="none"
+            stroke={color}
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : points.length === 1 ? (
+          <circle
+            key={index}
+            cx={Number(points[0]!.split(',')[0])}
+            cy={Number(points[0]!.split(',')[1])}
+            r="1.5"
+            fill={color}
+          />
+        ) : null,
+      )}
+    </svg>
+  );
+}
+
 async function stage3Read<T>(token: string, path: string): Promise<T> {
   const response = await fetch(`${apiBase}/api/v1${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1202,19 +1260,6 @@ function HistoryView({ token, queue }: { token: string; queue: string }) {
       live = false;
     };
   }, [token, queue, range]);
-  const series =
-    data?.slots.map((slot, index) => ({
-      x: (index * 100) / Math.max(1, data.slots.length - 1),
-      y: slot.sample ? Math.max(0, slot.sample.counts.waiting ?? 0) : null,
-    })) ?? [];
-  const maximum = Math.max(1, ...series.map((point) => point.y ?? 0));
-  const segments: string[][] = [];
-  for (let index = 0; index < series.length; index++) {
-    const point = series[index]!;
-    if (point.y === null) continue;
-    if (!segments.length || series[index - 1]?.y === null) segments.push([]);
-    segments[segments.length - 1]!.push(`${point.x},${100 - (point.y * 100) / maximum}`);
-  }
   return (
     <>
       <div className="page-heading">
@@ -1252,40 +1297,45 @@ function HistoryView({ token, queue }: { token: string; queue: string }) {
               </p>
             </div>
           </div>
-          <svg
-            role="img"
-            aria-label="Waiting job count over time with gaps"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            style={{ width: '100%', height: 220, padding: 20 }}
-          >
-            {segments.map((points, index) =>
-              points.length > 1 ? (
-                <polyline
-                  key={index}
-                  points={points.join(' ')}
-                  fill="none"
-                  stroke="#5ed4a1"
-                  strokeWidth="1.5"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ) : points.length === 1 ? (
-                <circle
-                  key={index}
-                  cx={Number(points[0]!.split(',')[0])}
-                  cy={Number(points[0]!.split(',')[1])}
-                  r="1.5"
-                  fill="#5ed4a1"
-                />
-              ) : null,
-            )}
-          </svg>
+          <HistoryPlot
+            slots={data.slots}
+            value={(sample) => sample.counts.waiting ?? 0}
+            label="Waiting job count over time with gaps"
+            color="#5ed4a1"
+          />
           <div className="meta">
             Latest:{' '}
             {[...data.slots].reverse().find((slot) => slot.sample)?.sample?.counts.waiting ??
               'unknown'}{' '}
             waiting · {data.slots.filter((slot) => slot.gap).length} missing periods.{' '}
             {data.warnings.join(' ')}
+          </div>
+        </section>
+      )}
+      {data && (
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>Failure rate</h2>
+              <p>
+                Sampled failures per minute from retained jobs in a five-minute window. Missing
+                reads appear as gaps.
+              </p>
+            </div>
+          </div>
+          <HistoryPlot
+            slots={data.slots}
+            value={(sample) => sample.failedPerMinute}
+            label="Failure rate over time with gaps"
+            color="#ef8b84"
+          />
+          <div className="meta">
+            Latest:{' '}
+            {[...data.slots]
+              .reverse()
+              .find((slot) => typeof slot.sample?.failedPerMinute === 'number')?.sample
+              ?.failedPerMinute ?? 'unknown'}{' '}
+            failures/minute · rates may be low when jobs are removed before sampling.
           </div>
         </section>
       )}
