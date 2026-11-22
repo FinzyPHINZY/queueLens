@@ -66,7 +66,31 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
     return Math.ceil(this.retentionMs / 1_000);
   }
 
+  private async ensureReady(): Promise<void> {
+    if (this.redis.status === 'ready') return;
+    if (this.redis.status !== 'connecting') throw new Error('History storage unavailable');
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => finish(new Error('History storage connection timed out')),
+        2_000,
+      );
+      const finish = (cause?: Error) => {
+        clearTimeout(timer);
+        this.redis.off('ready', onReady);
+        this.redis.off('error', onError);
+        if (cause) reject(cause);
+        else resolve();
+      };
+      const onReady = () => finish();
+      const onError = () => finish(new Error('History storage unavailable'));
+      this.redis.once('ready', onReady);
+      this.redis.once('error', onError);
+      if (this.redis.status === 'ready') finish();
+    });
+  }
+
   async append(sample: HistorySample): Promise<boolean> {
+    await this.ensureReady();
     const bucket =
       Math.floor(sample.observedAt / this.collectionIntervalMs) * this.collectionIntervalMs;
     const index = this.queueKey(sample.queue);
@@ -113,6 +137,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async read(queue: string, from: number, to: number): Promise<HistoryResult> {
+    await this.ensureReady();
     if (
       !Number.isSafeInteger(from) ||
       !Number.isSafeInteger(to) ||
@@ -173,6 +198,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async lease(key: string, ttlMs: number): Promise<boolean> {
+    await this.ensureReady();
     const result = await this.redis.set(
       `${this.prefix}:lease:${key}`,
       this.instanceId,
@@ -184,11 +210,13 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async loadRuleState(ruleId: string): Promise<RuleState> {
+    await this.ensureReady();
     const raw = await this.redis.get(this.alertStateKey(ruleId));
     return raw ? (JSON.parse(raw) as RuleState) : {};
   }
 
   async saveRuleState(ruleId: string, state: RuleState): Promise<void> {
+    await this.ensureReady();
     await this.redis.set(
       this.alertStateKey(ruleId),
       JSON.stringify(state),
@@ -198,11 +226,13 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async loadIncident(id: string): Promise<AlertIncident | null> {
+    await this.ensureReady();
     const raw = await this.redis.get(this.incidentKey(id));
     return raw ? (JSON.parse(raw) as AlertIncident) : null;
   }
 
   async saveIncident(incident: AlertIncident): Promise<void> {
+    await this.ensureReady();
     const index = `${this.prefix}:alert:incidents`;
     await this.redis
       .multi()
@@ -220,6 +250,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
     incident: AlertIncident,
     event: NotificationEvent,
   ): Promise<void> {
+    await this.ensureReady();
     const incidentIndex = `${this.prefix}:alert:incidents`;
     const notificationIndex = `${this.prefix}:notify:index`;
     const dueIndex = `${this.prefix}:notify:due`;
@@ -244,6 +275,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async listIncidents(limit: number): Promise<AlertIncident[]> {
+    await this.ensureReady();
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new Error('Invalid incident page size');
     const ids = await this.redis.zrevrange(`${this.prefix}:alert:incidents`, 0, limit - 1);
@@ -260,6 +292,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async enqueueNotification(event: NotificationEvent): Promise<void> {
+    await this.ensureReady();
     await this.redis
       .multi()
       .set(this.notificationKey(event.id), JSON.stringify(event), 'EX', this.expirySeconds)
@@ -274,6 +307,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async listNotifications(limit: number): Promise<NotificationEvent[]> {
+    await this.ensureReady();
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new Error('Invalid notification page size');
     const ids = await this.redis.zrevrange(`${this.prefix}:notify:index`, 0, limit - 1);
@@ -290,6 +324,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async dueNotifications(now: number, limit: number): Promise<NotificationEvent[]> {
+    await this.ensureReady();
     const ids = await this.redis.zrangebyscore(
       `${this.prefix}:notify:due`,
       '-inf',
@@ -323,6 +358,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async finishNotification(event: NotificationEvent): Promise<void> {
+    await this.ensureReady();
     await this.redis
       .multi()
       .set(this.notificationKey(event.id), JSON.stringify(event), 'EX', this.expirySeconds)
@@ -335,6 +371,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async rememberWorker(queue: string, id: string, lastHeartbeat: number): Promise<void> {
+    await this.ensureReady();
     await this.redis.set(
       `${this.prefix}:worker:last:${encodeURIComponent(queue)}:${id}`,
       String(lastHeartbeat),
@@ -344,6 +381,7 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   }
 
   async lastWorkerHeartbeat(queue: string, id: string): Promise<number | null> {
+    await this.ensureReady();
     const raw = await this.redis.get(
       `${this.prefix}:worker:last:${encodeURIComponent(queue)}:${id}`,
     );
