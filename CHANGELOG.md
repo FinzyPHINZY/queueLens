@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Stage 3 history and alerts
+
+- Add opt-in, bounded Redis aggregate history with explicit missing-period gaps and dashboard trends.
+- Add server-configured sustained alerts, persistent incidents, retryable webhook and embedded email delivery, and alert history.
+- Add authenticated, queue-scoped Prometheus metrics and history/alert API routes.
+
 ## Unreleased — Stage 2 diagnostics
 
 - Add optional payload-free worker heartbeats with TTL-based online and stale labels.

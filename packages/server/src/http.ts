@@ -14,6 +14,8 @@ import {
 import { SnapshotPoller, type PollingOptions } from '../../core/src/poller.js';
 import { errorCategory, sampleQueueDiagnostics } from '../../core/src/diagnostics.js';
 import { ReadBudgetExceededError, ReadTimeoutError } from '../../core/src/read-budget.js';
+import type { HistoryReader } from '../../core/src/history.js';
+import type { AlertRule, AlertStorage } from '../../core/src/alerts.js';
 import {
   safeJobDetail,
   safeJobSummary,
@@ -39,6 +41,9 @@ export interface HttpConfig {
   poller?: SnapshotPoller;
   redaction?: DisclosurePolicy;
   dashboardDir?: string;
+  history?: HistoryReader;
+  alertStore?: AlertStorage;
+  alertRules?: AlertRule[];
   log?: (entry: {
     level: 'debug' | 'error';
     event: 'api_read' | 'read_failed';
@@ -263,6 +268,63 @@ export function createHttpHandler(config: HttpConfig) {
 
     try {
       if (path === '/api/v1/events') return streamSnapshots(req, res);
+      if (
+        path === '/api/v1/alerts/rules' ||
+        path === '/api/v1/alerts/incidents' ||
+        path === '/api/v1/alerts/notifications'
+      ) {
+        const allowed = await allowedQueues(req);
+        if (config.registry.names().length && !allowed.length)
+          return error(res, 403, 'FORBIDDEN', 'Access denied');
+        const data = path.endsWith('/rules')
+          ? (config.alertRules ?? []).filter((rule) => allowed.includes(rule.queue))
+          : path.endsWith('/incidents')
+            ? ((await config.alertStore?.listIncidents(100)) ?? []).filter((incident) =>
+                allowed.includes(incident.queue),
+              )
+            : ((await config.alertStore?.listNotifications(100)) ?? []).filter((event) =>
+                allowed.includes(event.queue),
+              );
+        return send(res, 200, { success: true, data, meta: responseMeta() });
+      }
+      if (path === '/api/v1/metrics') {
+        const allowed = (await allowedQueues(req)).slice(0, 100);
+        if (config.registry.names().length && !allowed.length)
+          return error(res, 403, 'FORBIDDEN', 'Access denied');
+        const observations = await Promise.allSettled(allowed.map((name) => poller.get(name)));
+        const lines = [
+          '# HELP queuelens_queue_jobs Observed BullMQ jobs by queue and state',
+          '# TYPE queuelens_queue_jobs gauge',
+          '# HELP queuelens_scrape_partial Whether any authorized queue is missing or stale',
+          '# TYPE queuelens_scrape_partial gauge',
+          '# HELP queuelens_queue_observation_age_seconds Age of the last queue observation',
+          '# TYPE queuelens_queue_observation_age_seconds gauge',
+        ];
+        let partial = config.registry.names().length > 100;
+        for (let index = 0; index < allowed.length; index++) {
+          const result = observations[index];
+          if (result?.status !== 'fulfilled') {
+            partial = true;
+            continue;
+          }
+          const label = JSON.stringify(allowed[index]);
+          partial ||= result.value.meta.partial;
+          lines.push(
+            `queuelens_queue_observation_age_seconds{queue=${label}} ${Math.max(0, (Date.now() - Date.parse(result.value.meta.observedAt)) / 1000)}`,
+          );
+          for (const [state, value] of Object.entries(result.value.data.counts))
+            lines.push(
+              `queuelens_queue_jobs{queue=${label},state=${JSON.stringify(state)}} ${value}`,
+            );
+        }
+        lines.push(`queuelens_scrape_partial ${partial ? 1 : 0}`);
+        res.writeHead(200, {
+          'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+          'cache-control': 'no-store',
+        });
+        res.end(`${lines.join('\n')}\n`);
+        return;
+      }
       if (path === '/api/v1/ready') {
         if (!(await permitted(req, { permission: 'queue:read' }))) {
           return error(res, 403, 'FORBIDDEN', 'Access denied');
@@ -355,6 +417,7 @@ export function createHttpHandler(config: HttpConfig) {
       const flowMatch = /^\/api\/v1\/queues\/([^/]+)\/jobs\/([^/]+)\/flow$/.exec(path);
       const schedulersMatch = /^\/api\/v1\/queues\/([^/]+)\/schedulers$/.exec(path);
       const diagnosticsMatch = /^\/api\/v1\/queues\/([^/]+)\/diagnostics$/.exec(path);
+      const historyMatch = /^\/api\/v1\/queues\/([^/]+)\/history$/.exec(path);
       const queueMatch = /^\/api\/v1\/queues\/([^/]+)$/.exec(path);
       const rawName =
         jobsMatch?.[1] ??
@@ -362,6 +425,7 @@ export function createHttpHandler(config: HttpConfig) {
         flowMatch?.[1] ??
         schedulersMatch?.[1] ??
         diagnosticsMatch?.[1] ??
+        historyMatch?.[1] ??
         queueMatch?.[1];
       if (!rawName) return error(res, 404, 'INVALID_REQUEST', 'Route not found');
       const name = segment(rawName);
@@ -376,6 +440,21 @@ export function createHttpHandler(config: HttpConfig) {
       if (queueMatch) {
         const snapshot = await poller.get(name);
         return send(res, 200, { success: true, ...snapshot });
+      }
+      if (historyMatch) {
+        if (!config.history) return error(res, 404, 'INVALID_REQUEST', 'History is disabled');
+        const range = url.searchParams.get('range') ?? '1h';
+        const duration = (
+          { '1h': 3_600_000, '6h': 21_600_000, '24h': 86_400_000 } as Record<string, number>
+        )[range];
+        if (!duration || duration > config.history.retentionMs)
+          return error(res, 400, 'INVALID_FILTER', 'Invalid history range');
+        const to = Date.now();
+        const data = await config.history.read(name, to - duration, to);
+        const meta = responseMeta();
+        meta.partial = data.partial;
+        meta.warnings = data.warnings;
+        return send(res, 200, { success: true, data, meta });
       }
       if (diagnosticsMatch) {
         const diagnostics = await sampleQueueDiagnostics(

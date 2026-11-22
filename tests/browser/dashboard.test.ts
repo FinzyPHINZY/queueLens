@@ -256,3 +256,98 @@ test('live queue stream reconnects after interruption while polling remains avai
   await expect.poll(() => connections, { timeout: 8_000 }).toBeGreaterThan(1);
   await page.getByRole('heading', { name: 'Jobs' }).waitFor();
 });
+
+test('history shows sampling gaps and alerts show incident delivery', async ({ page }) => {
+  const queue = {
+    name: 'email',
+    counts: { waiting: 2, active: 0, delayed: 0, completed: 0, failed: 1 },
+    paused: false,
+  };
+  await page.route('http://queuelens.test/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith('/api/v1/')) {
+      if (!route.request().headers().authorization) {
+        await route.fulfill({
+          status: 401,
+          json: {
+            success: false,
+            data: null,
+            meta,
+            error: { code: 'UNAUTHORIZED', message: 'Access token required' },
+          },
+        });
+        return;
+      }
+      const data = url.pathname.endsWith('/history')
+        ? {
+            collectionIntervalMs: 60_000,
+            retentionMs: 86_400_000,
+            slots: [
+              { at: 60_000, gap: false, sample: { counts: { waiting: 2 } } },
+              { at: 120_000, gap: true, sample: null },
+              { at: 180_000, gap: false, sample: { counts: { waiting: 3 } } },
+            ],
+            warnings: ['Missing collection periods are shown as gaps'],
+          }
+        : url.pathname.endsWith('/alerts/rules')
+          ? [
+              {
+                id: 'email-backlog',
+                queue: 'email',
+                metric: 'backlog',
+                threshold: 2,
+                sustainMs: 120_000,
+                cooldownMs: 300_000,
+                channel: 'webhook',
+                enabled: true,
+              },
+            ]
+          : url.pathname.endsWith('/alerts/incidents')
+            ? [
+                {
+                  id: 'email-backlog:1',
+                  ruleId: 'email-backlog',
+                  queue: 'email',
+                  metric: 'backlog',
+                  status: 'open',
+                  openedAt: Date.now(),
+                  lastValue: 3,
+                },
+              ]
+            : url.pathname.endsWith('/alerts/notifications')
+              ? [
+                  {
+                    id: 'email-backlog:1:opening',
+                    queue: 'email',
+                    kind: 'opening',
+                    channel: 'webhook',
+                    status: 'sent',
+                    attempts: 1,
+                  },
+                ]
+              : url.pathname.endsWith('/workers')
+                ? { workers: [], uninstrumentedLiveness: 'unknown' }
+                : url.pathname.endsWith('/diagnostics')
+                  ? diagnostics
+                  : url.pathname.endsWith('/schedulers')
+                    ? []
+                    : url.pathname.endsWith('/jobs')
+                      ? { jobs: [], nextOffset: null }
+                      : [queue];
+      await route.fulfill({ json: { success: true, data, meta } });
+      return;
+    }
+    const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    await route.fulfill({ path: resolve(dist, path) });
+  });
+  await page.goto('http://queuelens.test/');
+  await page.getByLabel('Access token').fill('browser-token');
+  await page.getByRole('button', { name: 'Open monitor' }).click();
+  await page.getByRole('button', { name: /History/ }).click();
+  await page.getByRole('heading', { name: 'Queue history' }).waitFor();
+  await page.getByText('1 missing periods', { exact: false }).waitFor();
+  await page.screenshot({ path: 'test-results/dashboard-history.png', fullPage: true });
+  await page.getByRole('button', { name: /Alerts/ }).click();
+  await page.getByText('email-backlog:1:opening').waitFor();
+  await page.screenshot({ path: 'test-results/dashboard-alerts.png', fullPage: true });
+});

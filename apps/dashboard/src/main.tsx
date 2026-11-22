@@ -113,7 +113,7 @@ function App() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics>();
   const [schedulers, setSchedulers] = useState<Scheduler[]>([]);
-  const [view, setView] = useState<'queues' | 'workers'>('queues');
+  const [view, setView] = useState<'queues' | 'workers' | 'history' | 'alerts'>('queues');
   const [streaming, setStreaming] = useState(false);
   const lastLiveRefresh = useRef(0);
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
@@ -491,6 +491,18 @@ function App() {
               >
                 ◉ Workers <span className="queue-fail">{workers.length}</span>
               </button>
+              <button
+                className={view === 'history' ? 'queue active' : 'queue'}
+                onClick={() => setView('history')}
+              >
+                ◷ History
+              </button>
+              <button
+                className={view === 'alerts' ? 'queue active' : 'queue'}
+                onClick={() => setView('alerts')}
+              >
+                ⚑ Alerts
+              </button>
             </nav>
             <div className="sidebar-label">
               QUEUES <span>{queues.length}</span>
@@ -526,7 +538,11 @@ function App() {
             </div>
           </aside>
           <main className="content">
-            {view === 'workers' ? (
+            {view === 'history' ? (
+              <HistoryView token={token} queue={selected} />
+            ) : view === 'alerts' ? (
+              <AlertsView token={token} />
+            ) : view === 'workers' ? (
               <>
                 <div className="page-heading">
                   <div>
@@ -1103,6 +1119,322 @@ function Value({ value }: { value: Detail['payload'] }) {
           : 'Visible by monitor policy.'}
       </p>
       <pre>{JSON.stringify(value.value, null, 2)}</pre>
+    </>
+  );
+}
+
+type HistorySlot = {
+  at: number;
+  gap: boolean;
+  sample: null | {
+    counts: Counts;
+    failedPerMinute: number | null;
+    oldestWaitingAgeMs: number | null;
+  };
+};
+type HistoryData = {
+  slots: HistorySlot[];
+  retentionMs: number;
+  collectionIntervalMs: number;
+  warnings: string[];
+};
+type AlertRuleView = {
+  id: string;
+  queue: string;
+  metric: string;
+  threshold: number;
+  sustainMs: number;
+  cooldownMs: number;
+  channel: string;
+  enabled: boolean;
+};
+type IncidentView = {
+  id: string;
+  queue: string;
+  ruleId: string;
+  metric: string;
+  status: string;
+  openedAt: number;
+  resolvedAt?: number;
+  lastValue: number;
+};
+type NotificationView = {
+  id: string;
+  queue: string;
+  kind: string;
+  channel: string;
+  status: string;
+  attempts: number;
+  lastErrorCode?: string;
+};
+
+async function stage3Read<T>(token: string, path: string): Promise<T> {
+  const response = await fetch(`${apiBase}/api/v1${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: 'no-store',
+  });
+  const body = (await response.json()) as Envelope<T>;
+  if (!body.success) throw new Error(body.error.message);
+  return body.data;
+}
+
+function HistoryView({ token, queue }: { token: string; queue: string }) {
+  const [range, setRange] = useState<'1h' | '6h' | '24h'>('1h');
+  const [data, setData] = useState<HistoryData>();
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    if (!queue) return;
+    let live = true;
+    stage3Read<HistoryData>(token, `/queues/${encodeURIComponent(queue)}/history?range=${range}`)
+      .then((result) => {
+        if (live) {
+          setData(result);
+          setMessage('');
+        }
+      })
+      .catch((cause: Error) => {
+        if (live) {
+          setData(undefined);
+          setMessage(cause.message);
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [token, queue, range]);
+  const series =
+    data?.slots.map((slot, index) => ({
+      x: (index * 100) / Math.max(1, data.slots.length - 1),
+      y: slot.sample ? Math.max(0, slot.sample.counts.waiting ?? 0) : null,
+    })) ?? [];
+  const maximum = Math.max(1, ...series.map((point) => point.y ?? 0));
+  const segments: string[][] = [];
+  for (let index = 0; index < series.length; index++) {
+    const point = series[index]!;
+    if (point.y === null) continue;
+    if (!segments.length || series[index - 1]?.y === null) segments.push([]);
+    segments[segments.length - 1]!.push(`${point.x},${100 - (point.y * 100) / maximum}`);
+  }
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">OPERATIONS / HISTORY</div>
+          <h1>Queue history</h1>
+          <p>Sampled queue totals for {queue || 'a selected queue'}.</p>
+        </div>
+      </div>
+      <div className="meta">
+        {(['1h', '6h', '24h'] as const).map((value) => (
+          <button
+            key={value}
+            className="refresh"
+            disabled={range === value}
+            onClick={() => setRange(value)}
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+      {message && (
+        <div role="status" className="alert">
+          {message}
+        </div>
+      )}
+      {data && (
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>Waiting jobs</h2>
+              <p>
+                Samples every {Math.round(data.collectionIntervalMs / 1000)}s · retention{' '}
+                {Math.round(data.retentionMs / 3_600_000)}h · gaps are breaks in the line.
+              </p>
+            </div>
+          </div>
+          <svg
+            role="img"
+            aria-label="Waiting job count over time with gaps"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            style={{ width: '100%', height: 220, padding: 20 }}
+          >
+            {segments.map((points, index) =>
+              points.length > 1 ? (
+                <polyline
+                  key={index}
+                  points={points.join(' ')}
+                  fill="none"
+                  stroke="#5ed4a1"
+                  strokeWidth="1.5"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : points.length === 1 ? (
+                <circle
+                  key={index}
+                  cx={Number(points[0]!.split(',')[0])}
+                  cy={Number(points[0]!.split(',')[1])}
+                  r="1.5"
+                  fill="#5ed4a1"
+                />
+              ) : null,
+            )}
+          </svg>
+          <div className="meta">
+            Latest:{' '}
+            {[...data.slots].reverse().find((slot) => slot.sample)?.sample?.counts.waiting ??
+              'unknown'}{' '}
+            waiting · {data.slots.filter((slot) => slot.gap).length} missing periods.{' '}
+            {data.warnings.join(' ')}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function AlertsView({ token }: { token: string }) {
+  const [rules, setRules] = useState<AlertRuleView[]>([]);
+  const [incidents, setIncidents] = useState<IncidentView[]>([]);
+  const [notifications, setNotifications] = useState<NotificationView[]>([]);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    let live = true;
+    Promise.all([
+      stage3Read<AlertRuleView[]>(token, '/alerts/rules'),
+      stage3Read<IncidentView[]>(token, '/alerts/incidents'),
+      stage3Read<NotificationView[]>(token, '/alerts/notifications'),
+    ])
+      .then(([nextRules, nextIncidents, nextNotifications]) => {
+        if (live) {
+          setRules(nextRules);
+          setIncidents(nextIncidents);
+          setNotifications(nextNotifications);
+          setMessage('');
+        }
+      })
+      .catch((cause: Error) => {
+        if (live) setMessage(cause.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [token]);
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">OPERATIONS / ALERTS</div>
+          <h1>Alerts</h1>
+          <p>Configured rules, recent incidents, and delivery status.</p>
+        </div>
+      </div>
+      <div className="meta">
+        Rules are configured on the monitor server. No alerts are sent until rules and a delivery
+        adapter are configured.
+      </div>
+      {message && (
+        <div role="alert" className="alert">
+          {message}
+        </div>
+      )}
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Rules</h2>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rule</th>
+                <th>Queue</th>
+                <th>Condition</th>
+                <th>Sustain / cooldown</th>
+                <th>Channel</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rules.map((rule) => (
+                <tr key={rule.id}>
+                  <td>{rule.id}</td>
+                  <td>{rule.queue}</td>
+                  <td>
+                    {rule.metric} ≥ {rule.threshold}
+                  </td>
+                  <td>
+                    {Math.round(rule.sustainMs / 1000)}s / {Math.round(rule.cooldownMs / 1000)}s
+                  </td>
+                  <td>{rule.enabled ? rule.channel : 'disabled'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!rules.length && <div className="empty">No alert rules configured.</div>}
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Incidents</h2>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Opened</th>
+                <th>Rule</th>
+                <th>Queue</th>
+                <th>Status</th>
+                <th>Last value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incidents.map((incident) => (
+                <tr key={incident.id}>
+                  <td>{new Date(incident.openedAt).toLocaleString()}</td>
+                  <td>{incident.ruleId}</td>
+                  <td>{incident.queue}</td>
+                  <td>{incident.status}</td>
+                  <td>{incident.lastValue}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!incidents.length && <div className="empty">No incidents recorded.</div>}
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Notifications</h2>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Kind</th>
+                <th>Channel</th>
+                <th>Status</th>
+                <th>Attempts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {notifications.map((event) => (
+                <tr key={event.id}>
+                  <td>{event.id}</td>
+                  <td>{event.kind}</td>
+                  <td>{event.channel}</td>
+                  <td>
+                    {event.status}
+                    {event.lastErrorCode ? ` · ${event.lastErrorCode}` : ''}
+                  </td>
+                  <td>{event.attempts}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!notifications.length && <div className="empty">No notifications recorded.</div>}
+        </div>
+      </section>
     </>
   );
 }

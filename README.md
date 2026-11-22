@@ -1,6 +1,6 @@
 # QueueLens
 
-QueueLens is a self-hosted, read-only BullMQ monitor. Stage 2 adds optional worker heartbeats, live queue updates, bounded diagnostics, and queue comparison to the Stage 1 dashboard. **QueueLens is a working name.** The npm scope and public release are still being verified.
+QueueLens is a self-hosted, read-only BullMQ monitor. Stage 3 adds optional aggregate history, sustained alerts, notification delivery, and Prometheus metrics. **QueueLens is a working name.** The npm scope and public release are still being verified.
 
 ## Requirements
 
@@ -15,13 +15,31 @@ export MONITOR_TOKEN="$(openssl rand -hex 32)"
 docker compose up --build -d
 ```
 
-Open <http://127.0.0.1:3000> and enter the token. Compose seeds completed and failed jobs. Redis and the monitor are published on localhost only. For a local Redis instance, run `pnpm example:worker`, `pnpm example:seed`, and `MONITOR_TOKEN=... pnpm dev` in separate terminals.
+Open <http://127.0.0.1:3000> and enter the token. Compose seeds completed and failed jobs and enables aggregate history; allow one sampling interval before opening History. Redis and the monitor are published on localhost only. For a local Redis instance, run `pnpm example:worker`, `pnpm example:seed`, and `MONITOR_TOKEN=... pnpm dev` in separate terminals.
 
 Standalone configuration: `REDIS_URL` (default `redis://127.0.0.1:6379`), `MONITOR_QUEUES` (comma-separated; default `demo`), `MONITOR_HOST` (default `127.0.0.1`), `MONITOR_PORT` (default `3000`), `MONITOR_POLL_INTERVAL_MS` (1000–60000; default 5000), `MONITOR_MAX_READS` (1–16; default 4), `MONITOR_MAX_READS_PER_QUEUE` (1–8; default 2), and `MONITOR_QUERY_TIMEOUT_MS` (100–30000; default 2000). `MONITOR_TOKEN` is required. Use TLS and an independent long random token when exposing the monitor through a trusted proxy.
 
 Disclosure settings are `MONITOR_PAYLOAD_ACCESS=deny|allow` (default deny), comma-separated `MONITOR_ALLOWED_PATHS` and `MONITOR_REDACT_PATHS` JSON Pointers, and `MONITOR_SHOW_FAILURE_DETAILS=true` (default false). The Compose demo explicitly enables sanitized failure details for its synthetic jobs.
 
 `MONITOR_LOG_LEVEL` accepts `silent`, `error`, `info` (default), or `debug`. Logs contain structured event names and error codes, without request URLs, tokens, payloads, or Redis exception text.
+
+## Optional history and alerts
+
+Set `MONITOR_HISTORY_REDIS_URL` to enable a separate, monitor-owned Redis connection for aggregate history. The default sample interval is 60 seconds (`MONITOR_HISTORY_INTERVAL_MS`, 5000–3600000) and retention is 24 hours (`MONITOR_HISTORY_RETENTION_MS`, 3600000–2592000000). History uses `queuelens:v1:` keys, keeps at most 10,000 points per queue, and never stores job payloads. Missed samples appear as gaps. The dashboard offers 1h, 6h, and 24h ranges when retention permits. Redis persistence is needed if history and incident state must survive Redis loss.
+
+Alerts are opt-in. Set `MONITOR_ALERT_RULES_JSON` to an array of rules and `MONITOR_ALERT_WEBHOOK_URL` for webhook delivery. For example:
+
+```bash
+export MONITOR_HISTORY_REDIS_URL=redis://127.0.0.1:6379
+export MONITOR_ALERT_WEBHOOK_URL=https://alerts.example.com/queuelens
+export MONITOR_ALERT_RULES_JSON='[{"id":"demo-backlog","queue":"demo","metric":"backlog","threshold":10,"sustainMs":120000,"cooldownMs":300000,"channel":"webhook","enabled":true}]'
+```
+
+Metrics are `failed_count` (retained failed jobs), `failure_rate` (sampled failures per minute over five minutes), `backlog` (waiting, delayed, and waiting-children), `waiting_age` (oldest waiting job in milliseconds), and `heartbeat_gap` (milliseconds since an identified instrumented worker last reported). A heartbeat rule also needs `workerId`. Each threshold is inclusive. A sustained window requires consecutive samples; gaps reset it. One opening and one recovery event are recorded per incident. Cooldown suppresses reopening after recovery. No rule is created for zero activity by default. Rule changes require a monitor restart; the dashboard displays server rules but cannot edit them.
+
+Webhook delivery uses HTTPS (local HTTP is allowed), a five-second timeout, up to five attempts, and a stable `x-queuelens-event-id` for receiver deduplication. Delivery is at least once: a crash after remote acceptance can resend the same ID. Failures and attempts appear in the Alerts view. Embedded applications can use `createEmailSink(recipient, sendMail)` with their own SMTP or provider transport and pass it through `notificationSinks`; no email credentials are stored by QueueLens. Both adapters send aggregate alert fields only. Alert evaluation and delivery use the monitor process, separate from BullMQ worker processing.
+
+Protected endpoints include `GET /api/v1/queues/:name/history?range=1h|6h|24h`, `GET /api/v1/alerts/rules`, `/incidents`, `/notifications`, and `GET /api/v1/metrics` in Prometheus text format. Queue authorization applies to history, alerts, and metrics. Metrics expose only configured queue and state labels, capped at 100 queues, plus scrape partial and observation age gauges.
 
 ## Embed in an application
 

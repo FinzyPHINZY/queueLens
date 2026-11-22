@@ -31,6 +31,7 @@ services:
     build: .
     environment:
       REDIS_URL: redis://redis:6379
+      MONITOR_HISTORY_REDIS_URL: redis://redis:6379
       MONITOR_HOST: 0.0.0.0
       MONITOR_QUEUES: demo
       MONITOR_TOKEN: ${MONITOR_TOKEN:?Set MONITOR_TOKEN}
