@@ -9,7 +9,11 @@ import { validateDisclosurePolicy } from '../../core/src/redaction.js';
 import { createHttpHandler, type HttpConfig } from '../../server/src/http.js';
 import { AlertEngine, validateAlertRules, type AlertRule } from '../../core/src/alerts.js';
 import { HistoryCollector } from './history-collector.js';
-import { RedisHistoryStore, type HistoryStoreOptions } from './history-store.js';
+import {
+  RedisHistoryStore,
+  validateHistoryStoreOptions,
+  type HistoryStoreOptions,
+} from './history-store.js';
 import { NotificationDispatcher, type NotificationSink } from './notifications.js';
 export { instrumentWorker, type WorkerTelemetryOptions } from './worker-telemetry.js';
 
@@ -120,6 +124,10 @@ export function createStandaloneMonitor(options: StandaloneOptions) {
   if (!options.token && !options.authorize)
     throw new Error('A monitor authorization strategy is required');
   validateDisclosurePolicy(options.redaction);
+  validateAlertRules(options.alertRules ?? [], options.queueNames);
+  if (options.alertRules?.length && !options.history)
+    throw new Error('Alert rules require history storage');
+  if (options.history) validateHistoryStoreOptions(options.history);
   new ReadBudget(options.polling?.maxConcurrentReads, options.polling?.queryTimeoutMs);
   const perQueue = options.polling?.maxReadsPerQueue ?? 2;
   if (!Number.isInteger(perQueue) || perQueue < 1 || perQueue > 8) {

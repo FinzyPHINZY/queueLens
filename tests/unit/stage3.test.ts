@@ -21,6 +21,7 @@ import { createHttpHandler } from '../../packages/server/src/http.js';
 import { HistoryCollector } from '../../packages/monitor/src/history-collector.js';
 import { SnapshotPoller } from '../../packages/core/src/poller.js';
 import type { RedisHistoryStore } from '../../packages/monitor/src/history-store.js';
+import { createStandaloneMonitor } from '../../packages/monitor/src/index.js';
 
 class MemoryStore implements AlertStorage {
   states = new Map<string, RuleState>();
@@ -248,6 +249,29 @@ test('history collection tolerates a failed history store without interrupting q
   assert.equal((await poller.get('demo')).data.name, 'demo');
   collector.stop();
   poller.stop();
+});
+
+test('standalone validates alert and history options before opening owned queues', () => {
+  assert.throws(
+    () =>
+      createStandaloneMonitor({
+        redisUrl: 'redis://127.0.0.1:6379',
+        queueNames: ['demo'],
+        token: 'secret',
+        history: { redisUrl: 'redis://127.0.0.1:6379', collectionIntervalMs: 1 },
+      }),
+    /History interval/,
+  );
+  assert.throws(
+    () =>
+      createStandaloneMonitor({
+        redisUrl: 'redis://127.0.0.1:6379',
+        queueNames: ['demo'],
+        token: 'secret',
+        alertRules: [{ ...rule, queue: 'unknown' }],
+      }),
+    /unconfigured queue/,
+  );
 });
 
 test('history, alerts, and metrics enforce queue authorization and expose no payloads', async () => {

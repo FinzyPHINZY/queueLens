@@ -16,6 +16,17 @@ export interface HistoryStoreOptions {
   keyPrefix?: string;
 }
 
+export function validateHistoryStoreOptions(options: HistoryStoreOptions): void {
+  const interval = options.collectionIntervalMs ?? 60_000;
+  const retention = options.retentionMs ?? 24 * 60 * 60_000;
+  const prefix = options.keyPrefix ?? 'queuelens:v1';
+  if (!Number.isInteger(interval) || interval < 5_000 || interval > 3_600_000)
+    throw new Error('History interval must be between 5000 and 3600000 ms');
+  if (!Number.isInteger(retention) || retention < 3_600_000 || retention > 30 * 24 * 60 * 60_000)
+    throw new Error('History retention must be between 1 hour and 30 days');
+  if (!/^[A-Za-z0-9:_-]{1,80}$/.test(prefix)) throw new Error('Invalid history key prefix');
+}
+
 export class RedisHistoryStore implements HistoryReader, AlertStorage {
   readonly collectionIntervalMs: number;
   readonly retentionMs: number;
@@ -24,22 +35,10 @@ export class RedisHistoryStore implements HistoryReader, AlertStorage {
   private readonly instanceId = randomUUID();
 
   constructor(options: HistoryStoreOptions) {
+    validateHistoryStoreOptions(options);
     this.collectionIntervalMs = options.collectionIntervalMs ?? 60_000;
     this.retentionMs = options.retentionMs ?? 24 * 60 * 60_000;
     this.prefix = options.keyPrefix ?? 'queuelens:v1';
-    if (
-      !Number.isInteger(this.collectionIntervalMs) ||
-      this.collectionIntervalMs < 5_000 ||
-      this.collectionIntervalMs > 3_600_000
-    )
-      throw new Error('History interval must be between 5000 and 3600000 ms');
-    if (
-      !Number.isInteger(this.retentionMs) ||
-      this.retentionMs < 3_600_000 ||
-      this.retentionMs > 30 * 24 * 60 * 60_000
-    )
-      throw new Error('History retention must be between 1 hour and 30 days');
-    if (!/^[A-Za-z0-9:_-]{1,80}$/.test(this.prefix)) throw new Error('Invalid history key prefix');
     this.redis = new Redis({
       ...redisOptions(options.redisUrl),
       maxRetriesPerRequest: 1,
