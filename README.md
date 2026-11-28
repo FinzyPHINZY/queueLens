@@ -1,6 +1,10 @@
 # QueueHarbor
 
-QueueHarbor is a self-hosted BullMQ monitor with a read-only default and an explicitly enabled, audited management mode. The `@queueharbor/monitor` package is prepared for a `0.1.0` preview; it has not been published. Publication requires ownership of the `@queueharbor` npm scope and release approval.
+[![npm @queueharbor/monitor](https://img.shields.io/npm/v/%40queueharbor%2Fmonitor/latest.svg?label=npm%20%40queueharbor%2Fmonitor)](https://www.npmjs.com/package/@queueharbor/monitor)
+[![CI](https://github.com/FinzyPHINZY/queueharbor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FinzyPHINZY/queueharbor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
+
+QueueHarbor is a self-hosted BullMQ monitor with a read-only default and an explicitly enabled, audited management mode. The `@queueharbor/monitor@0.1.0` preview is available on npm.
 
 ## Requirements
 
@@ -55,7 +59,7 @@ Bulk retry and clean require `POST /api/v1/admin/queues/:name/preview/:action` f
 
 `pnpm build` prepares a typed, locally installable tarball with `pnpm --dir packages/monitor pack`. The package exposes `createMonitor` and `createExpressMonitor` with the same handler. Existing BullMQ queue objects remain owned by the host application.
 
-`pnpm test:package` builds the tarball, installs it in a temporary project outside this workspace, and checks its metadata, README, license, ESM runtime, and TypeScript declarations. The current package supports ESM consumers; CommonJS `require()` is not a declared entry point. After publication, install it with `pnpm add @queueharbor/monitor bullmq`.
+`pnpm test:package` builds the tarball, installs it in a temporary project outside this workspace, and checks its metadata, README, license, ESM runtime, and TypeScript declarations. The current package supports ESM consumers; CommonJS `require()` is not a declared entry point. Install it with `pnpm add @queueharbor/monitor bullmq`.
 
 | Component      | Declared range or mode | Tested in CI                                   |
 | -------------- | ---------------------- | ---------------------------------------------- |
