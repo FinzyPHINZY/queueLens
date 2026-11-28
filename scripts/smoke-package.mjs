@@ -36,10 +36,13 @@ try {
   const installed = join(temporary, 'node_modules/@queueharbor/monitor');
   const manifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
   assert.equal(manifest.name, '@queueharbor/monitor');
-  assert.equal(manifest.version, '0.1.0');
+  assert.equal(manifest.version, '0.1.1');
   assert.equal(manifest.private, false);
   assert.equal(manifest.license, 'MIT');
-  assert.match(await readFile(join(installed, 'README.md'), 'utf8'), /^# QueueHarbor/m);
+  const packageReadme = await readFile(join(installed, 'README.md'), 'utf8');
+  assert.match(packageReadme, /^# @queueharbor\/monitor/m);
+  assert.match(packageReadme, /npm install @queueharbor\/monitor bullmq/);
+  assert.doesNotMatch(packageReadme, /not been published|publication remains pending/i);
   assert.match(await readFile(join(installed, 'LICENSE'), 'utf8'), /^MIT License/m);
   await writeFile(
     join(temporary, 'smoke.mjs'),
