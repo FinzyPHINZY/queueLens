@@ -1,6 +1,8 @@
 # QueueHarbor
 
-[![npm version](https://img.shields.io/npm/v/%40queueharbor%2Fmonitor/latest.svg)](https://www.npmjs.com/package/@queueharbor/monitor)
+[![npm @queueharbor/monitor](https://img.shields.io/npm/v/%40queueharbor%2Fmonitor/latest.svg?label=npm%20%40queueharbor%2Fmonitor)](https://www.npmjs.com/package/@queueharbor/monitor)
+[![CI](https://github.com/FinzyPHINZY/queueharbor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FinzyPHINZY/queueharbor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
 
 QueueHarbor is a self-hosted BullMQ monitor with a read-only default and an explicitly enabled, audited management mode. The `@queueharbor/monitor@0.1.0` preview is available on npm.
 
