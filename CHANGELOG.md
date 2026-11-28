@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 0.1.1
+
+- Give the npm package a focused README with a working Node.js example, security defaults, and verified compatibility. Runtime code and API are unchanged.
+
 ## 0.1.0 — 2026-11-27
 
 - Add an external tarball install and TypeScript consumer check to CI.
